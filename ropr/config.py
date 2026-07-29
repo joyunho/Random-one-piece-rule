@@ -67,10 +67,13 @@ def default_config():
         "dice_min": 1,
         "dice_max": 100,
 
-        # 인생의고도전 : 플레이어별로 (기본값 + 0~15)
-        "altitude_base": 10,
+        # 인생의고도전 : 0~15 를 뽑고, [한 번 더] 를 누르면 0~5 를 한 번 더
+        "altitude_base": 0,          # 0 이면 '기본값 더하기' 없이 숫자만 나온다
         "altitude_min": 0,
         "altitude_max": 15,
+        "altitude2_min": 0,
+        "altitude2_max": 5,
+        "altitude_per_player": True,  # 끄면 다같이 쓰는 숫자 하나만 뽑는다
 
         # 너의상위는 : 플레이어별로 0~4
         "tier_min": 0,
@@ -87,8 +90,19 @@ def default_config():
         # 룰렛 연출 사용
         "animate": True,
 
+        # 만들어 본 추가 룰(현상금/각성/포네그리프) 전용 값
+        "bounty_min": 1,
+        "bounty_max": 100,
+        "poneglyph_high": 12,
+        "poneglyph_low": 4,
+
         "contents": [
-            {"id": c["id"], "name": c["name"], "enabled": True, "weight": 1.0}
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "enabled": c["id"] not in data.OFF_BY_DEFAULT,
+                "weight": 1.0,
+            }
             for c in data.CONTENTS
         ],
         "gangwon": copy.deepcopy(data.GANGWON_TABLE),

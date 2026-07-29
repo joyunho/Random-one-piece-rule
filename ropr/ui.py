@@ -90,11 +90,12 @@ class App(tk.Tk):
         self._spin_job = None
         self._spinning = False
         self.last_result = None
+        self._history_index = None
 
         self.base = pick_font(self)
         self.title("%s  v%s" % (data.APP_TITLE, data.VERSION))
-        self.geometry("1000x740")
-        self.minsize(900, 660)
+        self.geometry("1000x790")
+        self.minsize(900, 680)
         self.configure(bg=BG)
 
         self._setup_style()
@@ -183,11 +184,11 @@ class App(tk.Tk):
         self.nb.add(tab, text="  메인 뽑기  ")
 
         top = tk.Frame(tab, bg=PANEL)
-        top.pack(fill="x", padx=20, pady=(18, 6))
+        top.pack(fill="x", padx=20, pady=(14, 4))
 
         self.main_display = tk.Label(
             top, text="뽑기 버튼을 눌러 주세요", bg="#fbfbfd", fg=MUTED,
-            font=(self.base, 26, "bold"), height=2,
+            font=(self.base, 25, "bold"), height=1, pady=8,
             highlightthickness=1, highlightbackground=LINE)
         self.main_display.pack(fill="x")
 
@@ -214,6 +215,10 @@ class App(tk.Tk):
         ttk.Button(bottom, text="결과 복사", command=self._copy_last).pack(side="left")
         ttk.Button(bottom, text="기록 보기",
                    command=lambda: self.nb.select(5)).pack(side="left", padx=8)
+        # 인생의고도전이 나왔을 때만 켜지는 버튼
+        self.again_btn = ttk.Button(bottom, text="한 번 더 (0~5)", style="Go.TButton",
+                                    state="disabled", command=self._altitude_again)
+        self.again_btn.pack(side="right")
 
         wrap = self._panel(tab, fill="both", expand=True, padx=20, pady=(4, 0))
         self.main_result = ResultView(wrap, self.base)
@@ -272,13 +277,42 @@ class App(tk.Tk):
         self.main_result.show(result)
         self._record(result)
 
+        lo = self.cfg.get("altitude2_min", 0)
+        hi = self.cfg.get("altitude2_max", 5)
+        is_altitude = self.roller.last_main_id == "altitude"
+        self.again_btn.configure(text="한 번 더 (%s~%s)" % (lo, hi),
+                                 state="normal" if is_altitude else "disabled")
+
+    def _altitude_again(self):
+        """인생의고도전에서 0~5 를 한 번 더 뽑아 결과에 이어 붙인다."""
+        if self.last_result is None or self.roller.last_main_id != "altitude":
+            return
+        self.roller.altitude_again(self.last_result)
+        self.main_result.show(self.last_result)
+        self.again_btn.configure(state="disabled")
+        self._rewrite_last_history()
+        self._say("한 번 더 뽑았어요.")
+
     def _record(self, result):
         self.last_result = result
-        stamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.history.append("[%s]\n%s" % (stamp, result.plain))
+        self._history_index = len(self.history)
+        self.history.append(self._stamped(result))
         if hasattr(self, "history_text"):
             self._refresh_history()
         self._say("뽑기 완료 : %s" % result.title)
+
+    @staticmethod
+    def _stamped(result):
+        return "[%s]\n%s" % (datetime.datetime.now().strftime("%H:%M:%S"), result.plain)
+
+    def _rewrite_last_history(self):
+        """이미 기록에 넣은 결과에 내용이 더 붙었을 때 그 줄만 갱신한다."""
+        index = getattr(self, "_history_index", None)
+        if index is None or not (0 <= index < len(self.history)):
+            return
+        self.history[index] = self._stamped(self.last_result)
+        if hasattr(self, "history_text"):
+            self._refresh_history()
 
     def _copy_last(self):
         if not self.last_result:
@@ -528,18 +562,24 @@ class App(tk.Tk):
         nums.pack(fill="x", padx=24)
         self.num_entries = {}
         specs = (
-            ("dice_min", "지츠 다이스 최소", 0),
-            ("dice_max", "지츠 다이스 최대", 1),
-            ("altitude_base", "인생의고도 기본값", 2),
-            ("altitude_min", "인생의고도 추가 최소", 3),
-            ("altitude_max", "인생의고도 추가 최대", 4),
-            ("tier_min", "너의상위는 최소", 5),
-            ("tier_max", "너의상위는 최대", 6),
-            ("must_legend", "필수 전설 개수", 7),
-            ("must_hidden", "필수 히든 개수", 8),
-            ("ban_legend", "금지 전설 개수", 9),
-            ("ban_hidden", "금지 히든 개수", 10),
-            ("nyehyung_count", "녜힁제조기 글자 수", 11),
+            ("dice_min", "다이스 최소", 0),
+            ("dice_max", "다이스 최대", 1),
+            ("nyehyung_count", "녜힁제조기 글자 수", 2),
+            ("altitude_min", "인생의고도 최소", 3),
+            ("altitude_max", "인생의고도 최대", 4),
+            ("altitude_base", "인생의고도 기본더하기", 5),
+            ("altitude2_min", "한 번 더 최소", 6),
+            ("altitude2_max", "한 번 더 최대", 7),
+            ("tier_min", "너의상위는 최소", 8),
+            ("tier_max", "너의상위는 최대", 9),
+            ("must_legend", "필수 전설 개수", 10),
+            ("must_hidden", "필수 히든 개수", 11),
+            ("ban_legend", "금지 전설 개수", 12),
+            ("ban_hidden", "금지 히든 개수", 13),
+            ("bounty_min", "[창작] 현상금 최소", 14),
+            ("bounty_max", "[창작] 현상금 최대", 15),
+            ("poneglyph_high", "[창작] 포네 대박 합계", 16),
+            ("poneglyph_low", "[창작] 포네 쪽박 합계", 17),
         )
         for key, label, index in specs:
             row, col = divmod(index, 3)
@@ -551,6 +591,12 @@ class App(tk.Tk):
             entry.insert(0, str(self.cfg.get(key, "")))
             entry.pack(side="left")
             self.num_entries[key] = entry
+
+        self.var_per_player = tk.BooleanVar(
+            value=bool(self.cfg.get("altitude_per_player", True)))
+        ttk.Checkbutton(inner, style="Card.TCheckbutton",
+                        text="인생의고도전을 빨/파/보/노 각각 뽑기 (끄면 다같이 쓰는 숫자 하나만)",
+                        variable=self.var_per_player).pack(anchor="w", padx=24, pady=(10, 0))
 
         strip_row = tk.Frame(inner, bg=PANEL)
         strip_row.pack(fill="x", padx=24, pady=(10, 0))
@@ -609,6 +655,7 @@ class App(tk.Tk):
         for key, entry in self.num_entries.items():
             self.cfg[key] = parse_int(entry.get(), self.cfg.get(key, 0))
 
+        self.cfg["altitude_per_player"] = bool(self.var_per_player.get())
         self.cfg["nyehyung_strip_words"] = [
             w.strip() for w in self.strip_entry.get().split(",") if w.strip()]
 
@@ -708,6 +755,7 @@ class App(tk.Tk):
         if self.history and not messagebox.askyesno("확인", "기록을 모두 지울까요?"):
             return
         self.history = []
+        self._history_index = None
         self._refresh_history()
 
     # --------------------------------------------------------------- 종료

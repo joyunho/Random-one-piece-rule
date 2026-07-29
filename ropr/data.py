@@ -35,7 +35,7 @@ CONTENTS = [
     {"id": "jits_dice",        "name": "지츠'다이스'룰",               "follow": "jits_dice"},
     {"id": "nightmare",        "name": "변질된 악몽",                  "follow": None},
     {"id": "nyehyung",         "name": "녜힁제조기",                   "follow": "nyehyung"},
-    {"id": "altitude",         "name": "인생의고도전(기본10 + ?)",     "follow": "altitude"},
+    {"id": "altitude",         "name": "인생의고도전(0~15)",           "follow": "altitude"},
     {"id": "mystic_world",     "name": "신비한이세계전",               "follow": None},
     {"id": "your_tier",        "name": "너의상위는(0~4)",              "follow": "your_tier"},
     {"id": "must_char",        "name": "이캐릭들필수에요(4전설+4히든)", "follow": "must_char"},
@@ -43,7 +43,16 @@ CONTENTS = [
     {"id": "gangwon",          "name": "강원랜디",                     "follow": "gangwon"},
     {"id": "personal_mission", "name": "개인미션전",                   "follow": None},
     {"id": "random_nav",       "name": "랜덤항법전",                   "follow": None},
+
+    # ---- 아래 3개는 원본 목록에 없는 '만들어 본' 룰이라 기본으로 꺼져 있습니다.
+    #      [설정] 탭에서 체크하면 메인 뽑기에 같이 들어갑니다.
+    {"id": "bounty",           "name": "[창작] 현상금 수배전",         "follow": "bounty"},
+    {"id": "fruit_wake",       "name": "[창작] 악마의열매 각성전",     "follow": "fruit_wake"},
+    {"id": "poneglyph",        "name": "[창작] 포네그리프 해독전",     "follow": "poneglyph"},
 ]
+
+# 기본으로 꺼둘 컨텐츠 (원본 룰 확률을 건드리지 않도록)
+OFF_BY_DEFAULT = {"bounty", "fruit_wake", "poneglyph"}
 
 # 강원랜디 확률표.
 #   range 가 있으면 그 결과를 뽑은 뒤 범위 안에서 숫자를 한 번 더 뽑는다.

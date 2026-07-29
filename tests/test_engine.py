@@ -22,18 +22,34 @@ def make_roller(seed=0, **overrides):
 
 class TestMain(unittest.TestCase):
     def test_모든_컨텐츠가_에러없이_뽑힌다(self):
-        roller = make_roller(
+        cfg = default_config()
+        cfg.update(
             legend_chars=["전설%d" % i for i in range(12)],
             hidden_chars=["히든%d" % i for i in range(12)],
-            upper_chars=["로쿠규초월", "로우초월", "규환불멸", "샹크스영원"],
+            upper_chars=["로쿠규초월", "로우초월", "규환불멸", "샹크스영원", "미호크제한"],
         )
+        for content in cfg["contents"]:      # 창작 룰까지 전부 켜고 확인
+            content["enabled"] = True
+        roller = Roller(cfg, random.Random(0))
+
         seen = set()
-        for _ in range(4000):
+        for _ in range(6000):
             result = roller.draw_main()
             seen.add(result.title)
             self.assertTrue(result.plain)
         names = {c["name"] for c in data.CONTENTS}
-        self.assertEqual(seen, names, "14개 컨텐츠가 전부 나와야 한다")
+        self.assertEqual(seen, names, "%d개 컨텐츠가 전부 나와야 한다" % len(names))
+
+    def test_창작룰은_기본으로_꺼져있다(self):
+        cfg = default_config()
+        off = {c["id"] for c in cfg["contents"] if not c["enabled"]}
+        self.assertEqual(off, data.OFF_BY_DEFAULT)
+
+        roller = Roller(cfg, random.Random(0))
+        titles = {roller.draw_main().title for _ in range(4000)}
+        for content in data.CONTENTS:
+            if content["id"] in data.OFF_BY_DEFAULT:
+                self.assertNotIn(content["name"], titles)
 
     def test_연속방지(self):
         roller = make_roller(avoid_repeat=True)
@@ -91,17 +107,37 @@ class TestFollowUps(unittest.TestCase):
         order = re.findall(r"\d위 (\S+)", order_line)
         self.assertEqual(order, sorted(rolls, key=lambda c: rolls[c], reverse=True))
 
-    def test_인생의고도는_플레이어별_10더하기_0에서15(self):
+    def test_인생의고도는_기본값없이_0에서15(self):
         roller = make_roller(7)
         for _ in range(30):
             result = self._find(roller, "altitude")
             values = [l for l in result.lines if l.color]
             self.assertEqual(len(values), 4)
             for line in values:
-                left, total = line.text.split("=")
-                add = int(left.split("+")[1].strip())
-                self.assertTrue(0 <= add <= 15)
-                self.assertEqual(int(total.strip()), 10 + add)
+                self.assertNotIn("+", line.text, "기본 10 더하기는 없어야 한다")
+                self.assertTrue(0 <= int(line.text.split(":")[1].strip()) <= 15)
+
+    def test_한번더는_0에서5(self):
+        roller = make_roller(7)
+        for _ in range(30):
+            result = self._find(roller, "altitude")
+            before = len(result.lines)
+            roller.altitude_again(result)
+            added = result.lines[before:]
+            self.assertEqual(added[0].kind, "head")
+            self.assertIn("한 번 더", added[0].text)
+            values = [l for l in added if l.color]
+            self.assertEqual(len(values), 4)
+            for line in values:
+                self.assertTrue(0 <= int(line.text.split(":")[1].strip()) <= 5)
+
+    def test_플레이어별_끄면_숫자_하나만(self):
+        roller = make_roller(7, altitude_per_player=False)
+        result = self._find(roller, "altitude")
+        self.assertEqual([l for l in result.lines if l.color], [])
+        picks = [l for l in result.lines if l.text.startswith("▶")]
+        self.assertEqual(len(picks), 1)
+        self.assertTrue(0 <= int(picks[0].text.replace("▶", "").strip()) <= 15)
 
     def test_너의상위는_0에서4(self):
         roller = make_roller(11)
@@ -157,12 +193,13 @@ class TestNyehyung(unittest.TestCase):
             self.assertEqual(len(letters), 2)
             self.assertEqual(len(set(letters)), 2, "같은 글자가 두 번 나오면 안 된다")
 
-            matched = [l.text for l in result.lines
-                       if l.kind == "item" and not l.text.startswith("뽑힌 글자")]
+            text = [l.text for l in result.lines]
+            start = [i for i, t in enumerate(text) if t.startswith("사용 가능한 상위")][0]
+            matched = text[start + 1:text.index("등급별 랜덤 픽")]
             self.assertGreaterEqual(len(matched), 1, "최소 1마리는 나와야 한다")
             for line in matched:
                 name = line.split("(")[0].strip()
-                self.assertTrue(any(ch in name for ch in letters))
+                self.assertTrue(any(ch in name for ch in letters), line)
 
     def test_등급글자는_뽑히지_않는다(self):
         from ropr.engine import DrawResult
@@ -174,6 +211,50 @@ class TestNyehyung(unittest.TestCase):
             letters = head.text.split("▶")[1].replace(",", " ").split()
             for letter in letters:
                 self.assertNotIn(letter, "초월불멸영원제한신비")
+
+    def test_등급별로_한마리씩_뽑고_다이스로_순서를_정한다(self):
+        from ropr.engine import DrawResult
+        for seed in range(120):
+            roller = make_roller(seed, upper_chars=self.UPPERS)
+            result = DrawResult("녜힁제조기")
+            roller._follow_nyehyung(result)
+            text = [l.text for l in result.lines]
+
+            start = text.index("등급별 랜덤 픽")
+            picks = text[start + 1:start + 1 + len(data.GRADES)]
+            self.assertEqual(len(picks), 4)
+
+            matched_head = [t for t in text if t.startswith("사용 가능한 상위")][0]
+            count = int(matched_head.split("(")[1].split("마리")[0])
+            matched = [t.split("(")[0].strip() for t in text[text.index(matched_head) + 1:start]]
+            self.assertEqual(len(matched), count)
+
+            for grade, line in zip(data.GRADES, picks):
+                self.assertTrue(line.startswith(grade), line)
+                name = line.split(":")[1].strip()
+                if name == "(해당하는 상위 없음)":
+                    self.assertFalse([m for m in matched if grade in m], grade)
+                else:
+                    self.assertIn(name, matched, "뽑힌 상위는 사용 가능 목록 안에 있어야 한다")
+                    self.assertIn(grade, name)
+
+            # 다이스로 고르는 순서까지 나와야 한다
+            rolls = {l.color: int(l.text.split(":")[1]) for l in result.lines if l.color}
+            self.assertEqual(set(rolls), set(data.COLORS))
+            order = re.findall(r"\d위 (\S+)", text[-2])
+            self.assertEqual(order, sorted(rolls, key=lambda c: rolls[c], reverse=True))
+
+    def test_걸린_상위는_2마리가_넘어도_전부_나온다(self):
+        from ropr.engine import DrawResult
+        uppers = ["로우초월", "로켓불멸", "로빈영원", "로저제한", "로로노아초월"]
+        roller = make_roller(0, upper_chars=uppers)
+        result = DrawResult("녜힁제조기")
+        roller._follow_nyehyung(result)
+        head = [l.text for l in result.lines if l.text.startswith("사용 가능한 상위")][0]
+        # 전부 '로' 로 시작하므로 '로' 가 뽑히면 5마리가 다 나와야 한다
+        letters = [l.text for l in result.lines if l.text.startswith("뽑힌 글자")][0]
+        if "로" in letters.split("▶")[1]:
+            self.assertIn("(5마리)", head)
 
     def test_상위목록이_비면_경고(self):
         from ropr.engine import DrawResult
@@ -250,6 +331,81 @@ class TestGrade(unittest.TestCase):
         roller = make_roller(43, grade_pool=["신비"])
         for _ in range(50):
             self.assertIn("신비", roller.draw_grade_one().lines[-1].text)
+
+
+class TestExtraRules(unittest.TestCase):
+    """만들어 본 추가 룰 3개."""
+
+    def _run(self, follow_name, **overrides):
+        from ropr.engine import DrawResult
+        results = []
+        for seed in range(120):
+            roller = make_roller(seed, **overrides)
+            result = DrawResult("t")
+            getattr(roller, follow_name)(result)
+            results.append(result)
+        return results
+
+    def test_현상금_최고최저가_갈린다(self):
+        legend = ["전설%d" % i for i in range(8)]
+        for result in self._run("_follow_bounty", legend_chars=legend):
+            rolls = {}
+            for line in result.lines:
+                if line.color and "억" in line.text:
+                    rolls[line.color] = int(line.text.split(":")[1].replace("억", "").strip())
+            self.assertEqual(set(rolls), set(data.COLORS))
+            for value in rolls.values():
+                self.assertTrue(1 <= value <= 100)
+
+            text = [l.text for l in result.lines]
+            top = [t for t in text if t.startswith("해군 집중 표적")][0].split("▶")[1]
+            bottom = [t for t in text if t.startswith("무명의 해적")][0].split("▶")[1]
+            self.assertIn(max(rolls, key=lambda c: rolls[c]), top)
+            self.assertIn(min(rolls, key=lambda c: rolls[c]), bottom)
+
+            banned = [t for t in text if "금지 전설" in t][0].split(":")[1].strip()
+            self.assertIn(banned, legend)
+
+    def test_현상금_전설목록이_비면_경고(self):
+        for result in self._run("_follow_bounty")[:5]:
+            self.assertTrue(any(l.kind == "warn" for l in result.lines))
+
+    def test_각성과_봉인은_서로_다른_등급(self):
+        for result in self._run("_follow_fruit_wake"):
+            picks = [l for l in result.lines if l.color]
+            self.assertEqual([l.color for l in picks], data.COLORS)
+            for line in picks:
+                wake = line.text.split("각성")[1].split("/")[0].strip()
+                seal = line.text.split("봉인")[1].strip()
+                self.assertIn(wake, data.GRADE_POOL)
+                self.assertIn(seal, data.GRADE_POOL)
+                self.assertNotEqual(wake, seal, "각성과 봉인이 같으면 안 된다")
+
+    def test_각성_후보가_하나뿐이면_경고(self):
+        for result in self._run("_follow_fruit_wake", grade_pool=["신비"])[:3]:
+            self.assertTrue(any(l.kind == "warn" for l in result.lines))
+
+    def test_포네그리프_합계로_결과가_갈린다(self):
+        outcomes = set()
+        for result in self._run("_follow_poneglyph"):
+            values = [int(l.text.split(":")[1]) for l in result.lines if l.color]
+            self.assertEqual(len(values), 4)
+            for value in values:
+                self.assertTrue(0 <= value <= 4)
+
+            head = [l.text for l in result.lines if l.text.startswith("해독 결과")][0]
+            total = int(head.split("합계")[1].replace(")", "").strip())
+            self.assertEqual(total, sum(values))
+
+            verdict = [l.text for l in result.lines if l.text.startswith("▶")][0]
+            outcomes.add(verdict)
+            if total >= 12:
+                self.assertIn("라프텔", verdict)
+            elif total <= 4:
+                self.assertIn("공백", verdict)
+            else:
+                self.assertIn("항해 계속", verdict)
+        self.assertGreaterEqual(len(outcomes), 2, "결과가 한 종류만 나오면 안 된다")
 
 
 class TestWeightedPick(unittest.TestCase):

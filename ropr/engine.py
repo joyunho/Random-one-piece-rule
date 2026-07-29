@@ -134,6 +134,9 @@ class Roller:
             "must_char": self._follow_must_char,
             "ban_char": self._follow_ban_char,
             "gangwon": self._follow_gangwon,
+            "bounty": self._follow_bounty,
+            "fruit_wake": self._follow_fruit_wake,
+            "poneglyph": self._follow_poneglyph,
         }.get(self._follow_kind(picked["id"]))
         if follow:
             follow(res)
@@ -156,14 +159,16 @@ class Roller:
 
     def _follow_jits_dice(self, res):
         """지츠 '다이스' 룰 → 초불영제 4개 + 색깔별 주사위, 높은 사람부터 고르기."""
-        grades = self._grades()
-        colors = self._colors()
-        lo, hi = self._range("dice_min", "dice_max", 1, 100)
-
-        candidates = list(grades)
+        candidates = list(self._grades())
         self.rng.shuffle(candidates)
         res.head("이번 판 후보")
         res.item("   ".join(candidates))
+        self._dice_order(res)
+
+    def _dice_order(self, res):
+        """빨/파/보/노 주사위를 굴려서 고르는 순서를 정한다."""
+        colors = self._colors()
+        lo, hi = self._range("dice_min", "dice_max", 1, 100)
 
         rolls = self._distinct_rolls(colors, lo, hi)
         res.head("주사위 (%d ~ %d)" % (lo, hi))
@@ -173,6 +178,7 @@ class Roller:
         order = sorted(colors, key=lambda c: rolls[c], reverse=True)
         res.head("고르는 순서 (높은 사람부터)")
         res.item("   →   ".join("%d위 %s" % (i + 1, c) for i, c in enumerate(order)))
+        return order
 
     def _distinct_rolls(self, colors, lo, hi):
         """되도록 동점이 안 나오게 굴린다 (범위가 좁으면 동점 허용)."""
@@ -183,13 +189,38 @@ class Roller:
         return {c: self.rng.randint(lo, hi) for c in colors}
 
     def _follow_altitude(self, res):
-        """인생의고도전 → 플레이어별로 기본값 + (0~15)."""
-        base = self._int("altitude_base", 10)
+        """인생의고도전 → 0~15 뽑기. ([한 번 더] 를 누르면 0~5 를 한 번 더 뽑는다)"""
+        base = self._int("altitude_base", 0)
         lo, hi = self._range("altitude_min", "altitude_max", 0, 15)
-        res.head("인생의 고도  ( 기본 %d  +  %d~%d )" % (base, lo, hi))
+        label = "인생의 고도  ( %d ~ %d )" % (lo, hi)
+        if base:
+            label = "인생의 고도  ( 기본 %d  +  %d~%d )" % (base, lo, hi)
+        res.head(label)
+        self._spread(res, lo, hi, base)
+
+    def altitude_again(self, res):
+        """인생의고도전에서 [한 번 더] 를 눌렀을 때 → 0~5 한 번 더."""
+        lo, hi = self._range("altitude2_min", "altitude2_max", 0, 5)
+        res.head("한 번 더  ( %d ~ %d )" % (lo, hi))
+        self._spread(res, lo, hi, 0)
+        return res
+
+    def _spread(self, res, lo, hi, base):
+        """설정에 따라 플레이어별로 뽑거나, 다같이 쓰는 숫자 하나만 뽑는다."""
+        if not self.cfg.get("altitude_per_player", True):
+            value = self.rng.randint(lo, hi)
+            if base:
+                res.item("▶  %d + %d  =  %d" % (base, value, base + value))
+            else:
+                res.item("▶  %d" % value)
+            return
         for color in self._colors():
-            add = self.rng.randint(lo, hi)
-            res.item("%s  :  %d + %d  =  %d" % (color, base, add, base + add), color=color)
+            value = self.rng.randint(lo, hi)
+            if base:
+                res.item("%s  :  %d + %d  =  %d" % (color, base, value, base + value),
+                         color=color)
+            else:
+                res.item("%s  :  %d" % (color, value), color=color)
 
     def _follow_your_tier(self, res):
         """너의상위는 → 빨/파/보/노 개별로 0~4."""
@@ -271,10 +302,94 @@ class Roller:
         for name in matched:
             hit = [ch for ch in picked if ch in cores[name]]
             res.item("%s   (%s)" % (name, "·".join(hit)))
-        res.note("위 상위들만 써서 클리어하면 됩니다.")
+
+        # 위에서 걸린 상위들을 등급별로 나눠서 한 마리씩 뽑는다
+        grades = self._grades()
+        res.head("등급별 랜덤 픽")
+        for grade in grades:
+            candidates = [n for n in matched if grade in n]
+            if candidates:
+                res.item("%s  :  %s" % (grade, self.rng.choice(candidates)))
+            else:
+                res.item("%s  :  (해당하는 상위 없음)" % grade)
+
+        unknown = [n for n in matched if not any(g in n for g in grades)]
+        if unknown:
+            res.note("등급을 알아보지 못한 상위 : %s" % ", ".join(unknown))
+
+        self._dice_order(res)
+        res.note("주사위가 높게 뜬 사람부터 위 [등급별 랜덤 픽] 중에서 골라 갑니다.")
 
     def _follow_gangwon(self, res):
         self.roll_gangwon(res)
+
+    # -------------------------------------------------- 만들어 본 추가 룰 3개
+    def _follow_bounty(self, res):
+        """[창작] 현상금 수배전.
+
+        4명에게 현상금을 매겨서, 제일 높은 사람은 해군에게 찍히고(전설 1개 금지)
+        제일 낮은 사람은 무시당한 대신 이득(상위 1개 추가)을 본다.
+        """
+        colors = self._colors()
+        lo, hi = self._range("bounty_min", "bounty_max", 1, 100)
+        rolls = self._distinct_rolls(colors, lo, hi)
+
+        res.head("현상금 (%d ~ %d 억)" % (lo, hi))
+        for color in colors:
+            res.item("%s  :  %d억" % (color, rolls[color]), color=color)
+
+        top = max(colors, key=lambda c: rolls[c])
+        bottom = min(colors, key=lambda c: rolls[c])
+
+        res.head("결과")
+        res.item("해군 집중 표적  ▶  %s   (전설 1개 금지)" % top, color=top)
+        legend = [str(x) for x in self.cfg.get("legend_chars", []) if str(x).strip()]
+        if legend:
+            res.item("        금지 전설  :  %s" % self.rng.choice(legend))
+        else:
+            res.warn("전설 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
+        res.item("무명의 해적    ▶  %s   (상위 1개 추가)" % bottom, color=bottom)
+
+    def _follow_fruit_wake(self, res):
+        """[창작] 악마의열매 각성전.
+
+        플레이어마다 '반드시 써야 하는 등급' 과 '못 쓰는 등급' 을 하나씩 받는다.
+        """
+        pool = self.grade_pool()
+        res.head("각성 / 봉인")
+        if len(pool) < 2:
+            res.warn("후보 등급이 2개 이상이어야 해요 → [등급 뽑기] 탭에서 후보를 늘려 주세요.")
+            return
+        for color in self._colors():
+            wake, seal = self.rng.sample(pool, 2)
+            res.item("%s  :  각성 %s     /     봉인 %s" % (color, wake, seal), color=color)
+        res.note("'각성' 등급은 최소 한 마리 이상 쓰고, '봉인' 등급은 아예 못 씁니다.")
+
+    def _follow_poneglyph(self, res):
+        """[창작] 포네그리프 해독전.
+
+        4명이 로드 포네그리프를 하나씩 받고, 새겨진 숫자의 합으로 팀 전체 결과가 갈린다.
+        """
+        colors = self._colors()
+        lo, hi = self._range("tier_min", "tier_max", 0, 4)
+        values = {c: self.rng.randint(lo, hi) for c in colors}
+
+        res.head("로드 포네그리프 (%d ~ %d)" % (lo, hi))
+        for color in colors:
+            res.item("%s  :  %d" % (color, values[color]), color=color)
+
+        total = sum(values.values())
+        high = self._int("poneglyph_high", 12)
+        low = self._int("poneglyph_low", 4)
+
+        res.head("해독 결과   (합계 %d)" % total)
+        if total >= high:
+            res.item("▶  라프텔 도달!      전원 상위 +1")
+        elif total <= low:
+            res.item("▶  역사의 공백…      전원 노불노초")
+        else:
+            res.item("▶  항해 계속         각자 받은 숫자만큼 상위 고정")
+        res.note("합계 %d 이상이면 대박, %d 이하면 쪽박입니다." % (high, low))
 
     # -------------------------------------------------------------- 강원랜디
     def roll_gangwon(self, res=None):
