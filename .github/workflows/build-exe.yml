@@ -1,0 +1,48 @@
+name: build-exe
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 뽑기 로직 테스트
+        run: python -m unittest discover -s tests -v
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: PyInstaller 설치
+        run: pip install pyinstaller
+
+      - name: exe 빌드
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name "RandomOnePieceRule" `
+            --collect-submodules ropr `
+            main.py
+          Copy-Item -LiteralPath "dist/RandomOnePieceRule.exe" -Destination "dist/랜덤원피스룰.exe"
+          Remove-Item -LiteralPath "dist/RandomOnePieceRule.exe"
+
+      - name: 결과물 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: 랜덤원피스룰-exe
+          path: dist/랜덤원피스룰.exe
+          if-no-files-found: error

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+# PyInstaller 빌드 결과물
+build/
+dist/
+*.spec
+
+# 실행하면 생기는 사용자 설정
+데이터/
+*.json.bak
+*.json.tmp
