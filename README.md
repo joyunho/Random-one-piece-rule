@@ -17,9 +17,18 @@
 ### 방법 2 — 내 컴퓨터에서 직접 만들기
 
 1. [python.org](https://www.python.org/downloads/) 에서 파이썬 설치
-   (설치 화면에서 **tcl/tk** 옵션이 켜져 있어야 합니다)
+   - 설치 첫 화면의 **Add python.exe to PATH** 를 반드시 체크
+   - **tcl/tk and IDLE** 옵션도 켜져 있어야 합니다
 2. 이 폴더를 내려받아서 `build_exe.bat` 더블클릭
 3. `dist\랜덤원피스룰.exe` 완성
+
+**창이 떴다가 바로 닫힌다면** — 창은 이제 에러 메시지를 띄우고 멈춥니다.
+그래도 닫힌다면 폴더 주소창에 `cmd` 를 치고 엔터 → `build_exe.bat` 을 입력해서 실행하면
+메시지가 남습니다. 빌드 중 오류는 같은 폴더의 `build_log.txt` 에 기록됩니다.
+
+> `build_exe.bat` 은 **CRLF 줄바꿈 + 영문 전용**으로 되어 있어야 합니다.
+> LF 로 저장되면 윈도우 cmd 가 `goto` 라벨을 못 찾아서 창이 그냥 닫힙니다.
+> `.gitattributes` 에서 `*.bat -text` 로 고정해 두었습니다.
 
 ### 그냥 소스로 실행
 

@@ -37,8 +37,12 @@ jobs:
             --name "RandomOnePieceRule" `
             --collect-submodules ropr `
             main.py
-          Copy-Item -LiteralPath "dist/RandomOnePieceRule.exe" -Destination "dist/랜덤원피스룰.exe"
-          Remove-Item -LiteralPath "dist/RandomOnePieceRule.exe"
+
+      - name: 이름 바꾸기 (build_exe.bat 과 같은 스크립트)
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: python tools/finish_build.py
 
       - name: 결과물 올리기
         uses: actions/upload-artifact@v4
