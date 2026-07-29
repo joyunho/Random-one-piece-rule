@@ -459,7 +459,7 @@ class App(tk.Tk):
         bar.pack(side="bottom", fill="x", padx=20, pady=14)
         ttk.Button(bar, text="저장", style="Go.TButton",
                    command=self._save_chars).pack(side="left")
-        tk.Label(bar, text="예시)  상위 :  로쿠규초월  /  로우초월  …",
+        tk.Label(bar, text="상위는  이름 (등급)  형식으로.   예)  루피 (초월)   ·   거프 (불멸)",
                  bg=PANEL, fg=MUTED, font=(self.base, 9)).pack(side="left", padx=14)
 
         body = tk.Frame(tab, bg=PANEL)
@@ -469,7 +469,7 @@ class App(tk.Tk):
         specs = (
             ("legend_chars", "전설", "이캐릭들필수/금지에 쓰입니다."),
             ("hidden_chars", "히든", "이캐릭들필수/금지에 쓰입니다."),
-            ("upper_chars", "상위", "녜힁제조기의 글자 뽑기에 쓰입니다."),
+            ("upper_chars", "상위", "녜힁제조기에 쓰입니다.  이름 (등급) 형식."),
         )
         for key, title, hint in specs:
             col = tk.Frame(body, bg=PANEL)
@@ -505,7 +505,11 @@ class App(tk.Tk):
 
     def _save_chars(self):
         for key, (text, _label) in self.char_boxes.items():
-            self.cfg[key] = [x.strip() for x in text.get("1.0", "end").splitlines() if x.strip()]
+            names = config_mod.clean_names(text.get("1.0", "end").splitlines())
+            self.cfg[key] = names
+            # 중복·빈 줄을 정리한 결과를 화면에도 그대로 반영
+            text.delete("1.0", "end")
+            text.insert("1.0", "\n".join(names))
         self._refresh_char_counts()
         self._persist("캐릭터 목록을 저장했어요.")
 

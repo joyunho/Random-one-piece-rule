@@ -5,6 +5,8 @@ import random
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from .config import clean_names
+
 HANGUL_START = "가"  # 가
 HANGUL_END = "힣"    # 힣
 
@@ -245,7 +247,8 @@ class Roller:
     def _pick_characters(self, res, n_legend, n_hidden, label):
         res.head(label)
         for title, key, count in (("전설", "legend_chars", n_legend), ("히든", "hidden_chars", n_hidden)):
-            pool = [str(x) for x in self.cfg.get(key, []) if str(x).strip()]
+            # 중복이 남아 있으면 같은 캐릭터가 두 번 뽑힐 수 있어서 여기서도 걸러낸다
+            pool = clean_names(self.cfg.get(key))
             if not pool:
                 res.warn("%s 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요." % title)
                 continue
@@ -256,7 +259,7 @@ class Roller:
             res.item("%s %d개  :  %s" % (title, take, ",  ".join(picked)))
 
     def _upper_names(self):
-        return [str(x).strip() for x in self.cfg.get("upper_chars", []) if str(x).strip()]
+        return clean_names(self.cfg.get("upper_chars"))
 
     def _syllable_pool(self, names):
         """상위 이름에서 글자 -> 그 글자가 들어간 상위 목록 을 만든다.
@@ -320,7 +323,10 @@ class Roller:
             else:
                 res.item("%s  :  (해당하는 상위 없음)" % grade)
 
-        unknown = [n for n in matched if not any(g in n for g in grades)]
+        # 등급별 픽은 초/불/영/제 만 하지만, 신비 같은 다른 등급까지 '못 알아봤다' 고
+        # 하면 오해를 부르므로 아는 등급 단어 전체로 판단한다.
+        known = set(grades) | set(self.cfg.get("nyehyung_strip_words") or [])
+        unknown = [n for n in matched if not any(g in n for g in known)]
         if unknown:
             res.note("등급을 알아보지 못한 상위 : %s" % ", ".join(unknown))
 

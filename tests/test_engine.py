@@ -126,7 +126,7 @@ class TestFollowUps(unittest.TestCase):
             self.assertEqual(len(set(legend)), n_legend, "중복 없이 뽑아야 한다")
 
     def test_캐릭터_목록이_비면_경고(self):
-        roller = make_roller(17)
+        roller = make_roller(17, legend_chars=[], hidden_chars=[])
         result = self._find(roller, "must_char")
         self.assertEqual(len([l for l in result.lines if l.kind == "warn"]), 2)
 
@@ -292,6 +292,73 @@ class TestGrade(unittest.TestCase):
         roller = make_roller(43, grade_pool=["신비"])
         for _ in range(50):
             self.assertIn("신비", roller.draw_grade_one().lines[-1].text)
+
+
+class TestRoster(unittest.TestCase):
+    """기본으로 들어있는 캐릭터 명단."""
+
+    def test_기본_명단이_비어있지_않다(self):
+        cfg = default_config()
+        self.assertGreaterEqual(len(cfg["legend_chars"]), 7, "이캐금에 전설 7개가 필요하다")
+        self.assertGreaterEqual(len(cfg["hidden_chars"]), 7, "이캐금에 히든 7개가 필요하다")
+        self.assertGreaterEqual(len(cfg["upper_chars"]), 4)
+
+    def test_명단에_중복이_없다(self):
+        cfg = default_config()
+        for key in ("legend_chars", "hidden_chars", "upper_chars"):
+            names = cfg[key]
+            self.assertEqual(len(names), len(set(names)), key)
+
+    def test_상위는_전부_등급이_붙어있다(self):
+        known = set(data.GRADE_POOL)
+        for name in default_config()["upper_chars"]:
+            self.assertTrue(any(g in name for g in known),
+                            "등급을 못 알아보는 상위: %s" % name)
+
+    def test_네_등급이_모두_들어있다(self):
+        uppers = default_config()["upper_chars"]
+        for grade in data.GRADES:
+            self.assertTrue([u for u in uppers if grade in u], "%s 상위가 없다" % grade)
+
+    def test_빈_목록으로_저장돼_있어도_기본명단이_채워진다(self):
+        from ropr.config import _merge
+        merged = _merge({"legend_chars": [], "hidden_chars": [], "upper_chars": []})
+        self.assertTrue(merged["legend_chars"])
+        self.assertTrue(merged["upper_chars"])
+
+    def test_중복과_빈줄은_정리된다(self):
+        from ropr.config import clean_names
+        self.assertEqual(
+            clean_names(["샹크스", " 카이도 ", "", "샹크스", "   ", "빅맘"]),
+            ["샹크스", "카이도", "빅맘"])
+
+    def test_중복이_있어도_같은_캐릭이_두번_안뽑힌다(self):
+        roller = make_roller(0, legend_chars=["A", "A", "A", "A", "B", "C", "D"],
+                             hidden_chars=["X", "Y", "Z", "W"])
+        name = next(c["name"] for c in data.CONTENTS if c["id"] == "must_char")
+        for _ in range(6000):
+            result = roller.draw_main()
+            if result.title == name:
+                break
+        picked = [x.strip() for x in
+                  [l for l in result.lines if l.kind == "item"][0].text.split(":")[1].split(",")]
+        self.assertEqual(len(picked), len(set(picked)), picked)
+
+    def test_사용자가_넣은_명단이_우선한다(self):
+        from ropr.config import _merge
+        merged = _merge({"legend_chars": ["내캐릭"], "hidden_chars": [], "upper_chars": []})
+        self.assertEqual(merged["legend_chars"], ["내캐릭"])
+
+    def test_기본_명단으로_이캐필_이캐금이_경고없이_돈다(self):
+        roller = Roller(default_config(), random.Random(0))
+        for content_id in ("must_char", "ban_char"):
+            name = next(c["name"] for c in data.CONTENTS if c["id"] == content_id)
+            for _ in range(6000):
+                result = roller.draw_main()
+                if result.title == name:
+                    break
+            self.assertFalse([l for l in result.lines if l.kind == "warn"],
+                             [l.text for l in result.lines if l.kind == "warn"])
 
 
 class TestWeightedPick(unittest.TestCase):

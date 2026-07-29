@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import data
+from . import data, roster
 
 CONFIG_FILENAME = "설정.json"
 _config_path = None
@@ -54,6 +54,20 @@ def config_path():
     # 어디에도 못 쓰면 홈 폴더에 직접
     _config_path = Path.home() / ("%s_%s" % (data.APP_NAME, CONFIG_FILENAME))
     return _config_path
+
+
+def clean_names(names):
+    """앞뒤 공백 정리 + 빈 줄 제거 + 중복 제거 (순서는 유지).
+
+    중복이 남아 있으면 '전설 4개' 를 뽑을 때 같은 캐릭터가 두 번 나올 수 있다.
+    """
+    seen, out = set(), []
+    for raw in names or []:
+        name = str(raw).strip()
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
 
 
 def default_config():
@@ -101,9 +115,9 @@ def default_config():
         "nyehyung_count": 2,
         "nyehyung_strip_words": ["초월", "불멸", "영원", "제한", "신비"],
 
-        "legend_chars": [],
-        "hidden_chars": [],
-        "upper_chars": [],
+        "legend_chars": list(roster.DEFAULT_LEGEND),
+        "hidden_chars": list(roster.DEFAULT_HIDDEN),
+        "upper_chars": list(roster.DEFAULT_UPPER),
     }
 
 
@@ -155,8 +169,15 @@ def _merge(loaded):
         if cleaned:
             cfg["gangwon"] = cleaned
 
-    for key in ("legend_chars", "hidden_chars", "upper_chars"):
-        cfg[key] = [str(x).strip() for x in cfg.get(key, []) if str(x).strip()]
+    # 목록이 비어 있으면 기본 명단을 채워준다.
+    # (기본값이 생기기 전에 만들어진 설정 파일도 그대로 쓸 수 있도록)
+    defaults = {
+        "legend_chars": roster.DEFAULT_LEGEND,
+        "hidden_chars": roster.DEFAULT_HIDDEN,
+        "upper_chars": roster.DEFAULT_UPPER,
+    }
+    for key, fallback in defaults.items():
+        cfg[key] = clean_names(cfg.get(key)) or list(fallback)
     return cfg
 
 
