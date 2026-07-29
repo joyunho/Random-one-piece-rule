@@ -44,15 +44,8 @@ CONTENTS = [
     {"id": "personal_mission", "name": "개인미션전",                   "follow": None},
     {"id": "random_nav",       "name": "랜덤항법전",                   "follow": None},
 
-    # ---- 아래 3개는 원본 목록에 없는 '만들어 본' 룰이라 기본으로 꺼져 있습니다.
-    #      [설정] 탭에서 체크하면 메인 뽑기에 같이 들어갑니다.
-    {"id": "bounty",           "name": "[창작] 현상금 수배전",         "follow": "bounty"},
-    {"id": "fruit_wake",       "name": "[창작] 악마의열매 각성전",     "follow": "fruit_wake"},
-    {"id": "poneglyph",        "name": "[창작] 포네그리프 해독전",     "follow": "poneglyph"},
 ]
 
-# 기본으로 꺼둘 컨텐츠 (원본 룰 확률을 건드리지 않도록)
-OFF_BY_DEFAULT = {"bounty", "fruit_wake", "poneglyph"}
 
 # 강원랜디 확률표.
 #   range 가 있으면 그 결과를 뽑은 뒤 범위 안에서 숫자를 한 번 더 뽑는다.

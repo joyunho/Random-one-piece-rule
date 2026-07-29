@@ -134,9 +134,6 @@ class Roller:
             "must_char": self._follow_must_char,
             "ban_char": self._follow_ban_char,
             "gangwon": self._follow_gangwon,
-            "bounty": self._follow_bounty,
-            "fruit_wake": self._follow_fruit_wake,
-            "poneglyph": self._follow_poneglyph,
         }.get(self._follow_kind(picked["id"]))
         if follow:
             follow(res)
@@ -258,22 +255,14 @@ class Roller:
             picked = self.rng.sample(pool, take)
             res.item("%s %d개  :  %s" % (title, take, ",  ".join(picked)))
 
-    def _follow_nyehyung(self, res):
-        """녜힁제조기.
+    def _upper_names(self):
+        return [str(x).strip() for x in self.cfg.get("upper_chars", []) if str(x).strip()]
 
-        상위 이름에 들어있는 글자 중에서 2글자를 뽑고,
-        그 글자가 이름에 포함된 상위만 써서 클리어한다.
-        (최소 1마리는 나와야 하므로 실제 상위 이름에 있는 글자만 후보로 쓴다)
+    def _syllable_pool(self, names):
+        """상위 이름에서 글자 -> 그 글자가 들어간 상위 목록 을 만든다.
+
+        등급을 뜻하는 단어(초월/불멸/…)는 빼고 센다. 안 그러면 '초' 하나로 초월이 전부 걸린다.
         """
-        count = max(1, self._int("nyehyung_count", 2))
-        names = [str(x).strip() for x in self.cfg.get("upper_chars", []) if str(x).strip()]
-
-        res.head("상위 이름에서 %d글자 뽑기" % count)
-        if not names:
-            res.warn("상위 목록이 비어 있어요 → [캐릭터 관리] 탭의 '상위 목록'에 이름을 등록해 주세요.")
-            res.note("등록해 두면 그 이름들에 실제로 들어있는 글자만 뽑아서, 최소 1마리는 반드시 나오게 됩니다.")
-            return
-
         pool = {}   # 글자 -> [해당 글자가 이름에 들어있는 상위들]
         cores = {}  # 원래 이름 -> 등급 글자를 뺀 이름
         strip_words = self.cfg.get("nyehyung_strip_words") or []
@@ -284,7 +273,25 @@ class Roller:
             cores[name] = core
             for ch in set(syllables_of(core)):
                 pool.setdefault(ch, []).append(name)
+        return pool, cores
 
+    def _follow_nyehyung(self, res):
+        """녜힁제조기.
+
+        상위 이름에 들어있는 글자 중에서 2글자를 뽑고,
+        그 글자가 이름에 포함된 상위만 써서 클리어한다.
+        (최소 1마리는 나와야 하므로 실제 상위 이름에 있는 글자만 후보로 쓴다)
+        """
+        count = max(1, self._int("nyehyung_count", 2))
+        names = self._upper_names()
+
+        res.head("상위 이름에서 %d글자 뽑기" % count)
+        if not names:
+            res.warn("상위 목록이 비어 있어요 → [캐릭터 관리] 탭의 '상위 목록'에 이름을 등록해 주세요.")
+            res.note("등록해 두면 그 이름들에 실제로 들어있는 글자만 뽑아서, 최소 1마리는 반드시 나오게 됩니다.")
+            return
+
+        pool, cores = self._syllable_pool(names)
         if not pool:
             res.warn("상위 이름에서 뽑을 수 있는 글자가 없어요. (등급 글자만 남은 이름들)")
             return
@@ -323,83 +330,12 @@ class Roller:
     def _follow_gangwon(self, res):
         self.roll_gangwon(res)
 
-    # -------------------------------------------------- 만들어 본 추가 룰 3개
-    def _follow_bounty(self, res):
-        """[창작] 현상금 수배전.
-
-        4명에게 현상금을 매겨서, 제일 높은 사람은 해군에게 찍히고(전설 1개 금지)
-        제일 낮은 사람은 무시당한 대신 이득(상위 1개 추가)을 본다.
-        """
-        colors = self._colors()
-        lo, hi = self._range("bounty_min", "bounty_max", 1, 100)
-        rolls = self._distinct_rolls(colors, lo, hi)
-
-        res.head("현상금 (%d ~ %d 억)" % (lo, hi))
-        for color in colors:
-            res.item("%s  :  %d억" % (color, rolls[color]), color=color)
-
-        top = max(colors, key=lambda c: rolls[c])
-        bottom = min(colors, key=lambda c: rolls[c])
-
-        res.head("결과")
-        res.item("해군 집중 표적  ▶  %s   (전설 1개 금지)" % top, color=top)
-        legend = [str(x) for x in self.cfg.get("legend_chars", []) if str(x).strip()]
-        if legend:
-            res.item("        금지 전설  :  %s" % self.rng.choice(legend))
-        else:
-            res.warn("전설 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
-        res.item("무명의 해적    ▶  %s   (상위 1개 추가)" % bottom, color=bottom)
-
-    def _follow_fruit_wake(self, res):
-        """[창작] 악마의열매 각성전.
-
-        플레이어마다 '반드시 써야 하는 등급' 과 '못 쓰는 등급' 을 하나씩 받는다.
-        """
-        pool = self.grade_pool()
-        res.head("각성 / 봉인")
-        if len(pool) < 2:
-            res.warn("후보 등급이 2개 이상이어야 해요 → [등급 뽑기] 탭에서 후보를 늘려 주세요.")
-            return
-        for color in self._colors():
-            wake, seal = self.rng.sample(pool, 2)
-            res.item("%s  :  각성 %s     /     봉인 %s" % (color, wake, seal), color=color)
-        res.note("'각성' 등급은 최소 한 마리 이상 쓰고, '봉인' 등급은 아예 못 씁니다.")
-
-    def _follow_poneglyph(self, res):
-        """[창작] 포네그리프 해독전.
-
-        4명이 로드 포네그리프를 하나씩 받고, 새겨진 숫자의 합으로 팀 전체 결과가 갈린다.
-        """
-        colors = self._colors()
-        lo, hi = self._range("tier_min", "tier_max", 0, 4)
-        values = {c: self.rng.randint(lo, hi) for c in colors}
-
-        res.head("로드 포네그리프 (%d ~ %d)" % (lo, hi))
-        for color in colors:
-            res.item("%s  :  %d" % (color, values[color]), color=color)
-
-        total = sum(values.values())
-        high = self._int("poneglyph_high", 12)
-        low = self._int("poneglyph_low", 4)
-
-        res.head("해독 결과   (합계 %d)" % total)
-        if total >= high:
-            res.item("▶  라프텔 도달!      전원 상위 +1")
-        elif total <= low:
-            res.item("▶  역사의 공백…      전원 노불노초")
-        else:
-            res.item("▶  항해 계속         각자 받은 숫자만큼 상위 고정")
-        res.note("합계 %d 이상이면 대박, %d 이하면 쪽박입니다." % (high, low))
-
     # -------------------------------------------------------------- 강원랜디
-    def roll_gangwon(self, res=None):
-        if res is None:
-            res = DrawResult("강원랜디")
-        table = [r for r in self.cfg.get("gangwon", []) if str(r.get("name", "")).strip()]
-        if not table:
-            res.warn("강원랜디 확률표가 비어 있어요 → [설정] 탭에서 등록해 주세요.")
-            return res
+    def _gangwon_table(self):
+        return [r for r in self.cfg.get("gangwon", []) if str(r.get("name", "")).strip()]
 
+    def _pick_gangwon(self, table):
+        """확률표에서 하나 뽑고 (항목, 확률%, 범위형이면 뽑은 숫자) 를 돌려준다."""
         weights = []
         for row in table:
             try:
@@ -414,15 +350,28 @@ class Roller:
         except (TypeError, ValueError):
             pct = 0.0
 
-        res.head("확률표에서 하나 뽑기")
-        res.item("▶  %s      ( %.2f%% )" % (picked["name"], pct))
-
+        extra = None
         span = picked.get("range")
         if isinstance(span, (list, tuple)) and len(span) == 2:
             lo, hi = int(span[0]), int(span[1])
             if lo > hi:
                 lo, hi = hi, lo
-            res.item("└  뽑은 숫자  :  %d" % self.rng.randint(lo, hi))
+            extra = self.rng.randint(lo, hi)
+        return picked, pct, extra
+
+    def roll_gangwon(self, res=None):
+        if res is None:
+            res = DrawResult("강원랜디")
+        table = self._gangwon_table()
+        if not table:
+            res.warn("강원랜디 확률표가 비어 있어요 → [설정] 탭에서 등록해 주세요.")
+            return res
+
+        picked, pct, extra = self._pick_gangwon(table)
+        res.head("확률표에서 하나 뽑기")
+        res.item("▶  %s      ( %.2f%% )" % (picked["name"], pct))
+        if extra is not None:
+            res.item("└  뽑은 숫자  :  %d" % extra)
         return res
 
     # -------------------------------------------------------------- 등급 뽑기

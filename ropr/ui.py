@@ -576,10 +576,6 @@ class App(tk.Tk):
             ("must_hidden", "필수 히든 개수", 11),
             ("ban_legend", "금지 전설 개수", 12),
             ("ban_hidden", "금지 히든 개수", 13),
-            ("bounty_min", "[창작] 현상금 최소", 14),
-            ("bounty_max", "[창작] 현상금 최대", 15),
-            ("poneglyph_high", "[창작] 포네 대박 합계", 16),
-            ("poneglyph_low", "[창작] 포네 쪽박 합계", 17),
         )
         for key, label, index in specs:
             row, col = divmod(index, 3)

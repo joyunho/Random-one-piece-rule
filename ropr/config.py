@@ -90,19 +90,8 @@ def default_config():
         # 룰렛 연출 사용
         "animate": True,
 
-        # 만들어 본 추가 룰(현상금/각성/포네그리프) 전용 값
-        "bounty_min": 1,
-        "bounty_max": 100,
-        "poneglyph_high": 12,
-        "poneglyph_low": 4,
-
         "contents": [
-            {
-                "id": c["id"],
-                "name": c["name"],
-                "enabled": c["id"] not in data.OFF_BY_DEFAULT,
-                "weight": 1.0,
-            }
+            {"id": c["id"], "name": c["name"], "enabled": True, "weight": 1.0}
             for c in data.CONTENTS
         ],
         "gangwon": copy.deepcopy(data.GANGWON_TABLE),
