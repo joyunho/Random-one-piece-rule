@@ -2,3 +2,6 @@
 # LF 로 저장되면 윈도우 cmd 가 goto 라벨을 못 찾아서 창이 그냥 닫힌다.
 *.bat -text
 *.cmd -text
+
+# 빌드된 exe는 바이너리로 취급 (텍스트로 diff 시도하면 안 됨)
+release/*.exe -diff -merge binary

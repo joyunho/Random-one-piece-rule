@@ -19,6 +19,8 @@ jobs:
   build:
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write   # release/ 폴더에 exe 를 커밋해서 되돌려 넣기 위함
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,3 +52,24 @@ jobs:
           name: 랜덤원피스룰-exe
           path: dist/랜덤원피스룰.exe
           if-no-files-found: error
+
+      # main 에 푸시될 때만: 방금 만든 exe 를 저장소의 release/ 에도 커밋해 둔다.
+      # 그러면 Actions 를 뒤지지 않고 저장소에서 바로 다운로드할 수 있다.
+      # 커밋 메시지의 [skip ci] 덕분에 이 커밋 자체는 워크플로를 다시 돌리지 않는다
+      # (내용이 그대로면 diff 가 없어서 커밋 자체를 만들지 않는다).
+      - name: exe를 저장소 release/ 에도 반영
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item -Force "dist/랜덤원피스룰.exe" "release/랜덤원피스룰.exe"
+          git add release/랜덤원피스룰.exe
+          $changed = git status --porcelain -- release/랜덤원피스룰.exe
+          if ($changed) {
+            git commit -m "release: 랜덤원피스룰.exe 자동 갱신 [skip ci]"
+            git push
+          } else {
+            Write-Host "exe 내용이 그대로라 커밋을 생략합니다."
+          }
