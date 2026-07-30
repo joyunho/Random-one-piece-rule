@@ -43,7 +43,7 @@ CONTENTS = [
     {"id": "gangwon",          "name": "강원랜디",                     "follow": "gangwon"},
     {"id": "personal_mission", "name": "개인미션전",                   "follow": None},
     {"id": "random_nav",       "name": "랜덤항법전",                   "follow": None},
-
+    {"id": "unlucky",          "name": "내가 제일 운 없어",            "follow": "unlucky"},
 ]
 
 

@@ -93,6 +93,10 @@ def default_config():
         "tier_min": 0,
         "tier_max": 4,
 
+        # 내가 제일 운 없어 : 플레이어별 행운의 토큰 개수
+        "unlucky_min": 0,
+        "unlucky_max": 5,
+
         # 이캐릭들필수에요 / 이캐릭들금지에요
         "must_legend": 4,
         "must_hidden": 4,
@@ -103,6 +107,8 @@ def default_config():
         "avoid_repeat": True,
         # 룰렛 연출 사용
         "animate": True,
+        # 효과음 (윈도우에서만 소리가 난다)
+        "sound": True,
 
         "contents": [
             {"id": c["id"], "name": c["name"], "enabled": True, "weight": 1.0}

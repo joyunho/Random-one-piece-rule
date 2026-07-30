@@ -139,6 +139,32 @@ class TestFollowUps(unittest.TestCase):
         self.assertIn("히든 1개", items[1].text)
 
 
+    def test_내가제일운없어(self):
+        roller = make_roller(23)
+        for _ in range(40):
+            result = self._find(roller, "unlucky")
+            tokens = {}
+            for line in result.lines:
+                if line.color:
+                    tokens[line.color] = int(line.text.split(":")[1].replace("개", ""))
+            self.assertEqual(set(tokens), set(data.COLORS))
+            for value in tokens.values():
+                self.assertTrue(0 <= value <= 5)
+
+            verdict = [l.text for l in result.lines if l.text.startswith("▶")][0]
+            fewest = min(tokens.values())
+            self.assertIn("토큰 %d개" % fewest, verdict)
+            for color, value in tokens.items():
+                self.assertEqual(color in verdict, value == fewest, (color, verdict))
+
+    def test_행운의토큰_범위는_설정을_따른다(self):
+        roller = make_roller(29, unlucky_min=2, unlucky_max=3)
+        result = self._find(roller, "unlucky")
+        for line in result.lines:
+            if line.color:
+                self.assertIn(int(line.text.split(":")[1].replace("개", "")), (2, 3))
+
+
 class TestNyehyung(unittest.TestCase):
     UPPERS = ["로쿠규초월", "로우초월", "규환불멸", "샹크스영원", "미호크제한"]
 
@@ -173,7 +199,7 @@ class TestNyehyung(unittest.TestCase):
             for letter in letters:
                 self.assertNotIn(letter, "초월불멸영원제한신비")
 
-    def test_등급별로_한마리씩_뽑고_다이스로_순서를_정한다(self):
+    def test_등급별로_한마리씩_뽑는다(self):
         from ropr.engine import DrawResult
         for seed in range(120):
             roller = make_roller(seed, upper_chars=self.UPPERS)
@@ -199,11 +225,9 @@ class TestNyehyung(unittest.TestCase):
                     self.assertIn(name, matched, "뽑힌 상위는 사용 가능 목록 안에 있어야 한다")
                     self.assertIn(grade, name)
 
-            # 다이스로 고르는 순서까지 나와야 한다
-            rolls = {l.color: int(l.text.split(":")[1]) for l in result.lines if l.color}
-            self.assertEqual(set(rolls), set(data.COLORS))
-            order = re.findall(r"\d위 (\S+)", text[-2])
-            self.assertEqual(order, sorted(rolls, key=lambda c: rolls[c], reverse=True))
+            # 녜힁제조기에는 주사위가 없다
+            self.assertEqual([l for l in result.lines if l.color], [])
+            self.assertFalse([t for t in text if "주사위" in t or "고르는 순서" in t])
 
     def test_걸린_상위는_2마리가_넘어도_전부_나온다(self):
         from ropr.engine import DrawResult

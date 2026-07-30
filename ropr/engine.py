@@ -122,10 +122,17 @@ class Roller:
     def draw_main(self):
         picked = self.pick_main()
         if picked is None:
-            res = DrawResult("뽑을 컨텐츠가 없어요")
-            res.warn("[설정] 탭에서 메인 컨텐츠를 최소 1개는 켜 주세요.")
-            return res
+            return self.empty_result()
+        return self.resolve(picked)
 
+    @staticmethod
+    def empty_result():
+        res = DrawResult("뽑을 컨텐츠가 없어요")
+        res.warn("[설정] 탭에서 메인 컨텐츠를 최소 1개는 켜 주세요.")
+        return res
+
+    def resolve(self, picked):
+        """뽑힌 컨텐츠의 추가 뽑기를 전부 굴려서 글자 결과로 만든다."""
         res = DrawResult(picked["name"])
         follow = {
             "force4": self._follow_force4,
@@ -133,6 +140,7 @@ class Roller:
             "nyehyung": self._follow_nyehyung,
             "altitude": self._follow_altitude,
             "your_tier": self._follow_your_tier,
+            "unlucky": self._follow_unlucky,
             "must_char": self._follow_must_char,
             "ban_char": self._follow_ban_char,
             "gangwon": self._follow_gangwon,
@@ -157,11 +165,22 @@ class Roller:
         res.item("▶  %s" % self.rng.choice(grades))
 
     def _follow_jits_dice(self, res):
-        """지츠 '다이스' 룰 → 초불영제 4개 + 색깔별 주사위, 높은 사람부터 고르기."""
-        candidates = list(self._grades())
-        self.rng.shuffle(candidates)
-        res.head("이번 판 후보")
-        res.item("   ".join(candidates))
+        """지츠 '다이스' 룰.
+
+        초·불·영·제 등급마다 상위를 한 마리씩 뽑아 놓고,
+        빨/파/보/노가 주사위를 굴려 높은 사람부터 그중 하나를 골라 간다.
+        """
+        res.head("등급별 후보")
+        empty = True
+        for grade in self._grades():
+            unit = self.pick_upper(grade)
+            if unit:
+                empty = False
+                res.item("%s  :  %s" % (grade, unit))
+            else:
+                res.item("%s  :  (등록된 상위 없음)" % grade)
+        if empty:
+            res.warn("상위 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
         self._dice_order(res)
 
     def _dice_order(self, res):
@@ -228,6 +247,29 @@ class Roller:
         for color in self._colors():
             res.item("%s  :  %d" % (color, self.rng.randint(lo, hi)), color=color)
 
+    def unlucky_range(self):
+        return self._range("unlucky_min", "unlucky_max", 0, 5)
+
+    def _follow_unlucky(self, res):
+        """내가 제일 운 없어.
+
+        플레이어마다 행운의 토큰을 뽑는다. 토큰을 안 쓰고 클리어하면
+        토큰 숫자만큼 유카를 줄일 수 있다.
+        """
+        colors = self._colors()
+        lo, hi = self.unlucky_range()
+        tokens = {c: self.rng.randint(lo, hi) for c in colors}
+
+        res.head("행운의 토큰  ( %d ~ %d )" % (lo, hi))
+        for color in colors:
+            res.item("%s  :  %d개" % (color, tokens[color]), color=color)
+
+        fewest = min(tokens.values())
+        losers = [c for c in colors if tokens[c] == fewest]
+        res.head("제일 운 없는 사람")
+        res.item("▶  %s   (토큰 %d개)" % (" · ".join(losers), fewest))
+        res.note("행운의 토큰을 쓰지 않고 클리어하면, 가진 토큰 숫자만큼 유카를 줄일 수 있습니다.")
+
     def _follow_must_char(self, res):
         self._pick_characters(
             res,
@@ -260,6 +302,61 @@ class Roller:
 
     def _upper_names(self):
         return clean_names(self.cfg.get("upper_chars"))
+
+    # -------------------------------- 낱개 뽑기 (버튼 하나씩 누르는 화면에서 사용)
+    def dice_range(self):
+        return self._range("dice_min", "dice_max", 1, 100)
+
+    def altitude_range(self):
+        return self._range("altitude_min", "altitude_max", 0, 15)
+
+    def altitude_extra_range(self):
+        return self._range("altitude2_min", "altitude2_max", 0, 5)
+
+    def tier_range(self):
+        return self._range("tier_min", "tier_max", 0, 4)
+
+    def roll(self, span):
+        lo, hi = span
+        return self.rng.randint(lo, hi)
+
+    def uppers_by_grade(self):
+        """등급 -> 그 등급의 상위 목록."""
+        table = {}
+        for grade in self._grades():
+            table[grade] = [n for n in self._upper_names() if grade in n]
+        return table
+
+    def pick_upper(self, grade, exclude=()):
+        pool = [n for n in self._upper_names() if grade in n and n not in exclude]
+        return self.rng.choice(pool) if pool else None
+
+    def pick_char(self, key, exclude=()):
+        pool = [n for n in clean_names(self.cfg.get(key)) if n not in exclude]
+        return self.rng.choice(pool) if pool else None
+
+    def letter_pool(self):
+        """녜힁제조기용 : (글자 -> 상위목록, 원래이름 -> 등급 뺀 이름)"""
+        return self._syllable_pool(self._upper_names())
+
+    def pick_letter(self, exclude=()):
+        pool, _cores = self.letter_pool()
+        keys = sorted(k for k in pool if k not in exclude)
+        return self.rng.choice(keys) if keys else None
+
+    def matched_uppers(self, letters):
+        """뽑힌 글자가 이름에 들어간 상위들을 (이름, 걸린글자들) 로 돌려준다."""
+        letters = [l for l in letters if l]
+        if not letters:
+            return []
+        names = self._upper_names()
+        _pool, cores = self._syllable_pool(names)
+        out = []
+        for name in names:
+            hit = [l for l in letters if l in cores.get(name, name)]
+            if hit:
+                out.append((name, hit))
+        return out
 
     def _syllable_pool(self, names):
         """상위 이름에서 글자 -> 그 글자가 들어간 상위 목록 을 만든다.
@@ -330,8 +427,7 @@ class Roller:
         if unknown:
             res.note("등급을 알아보지 못한 상위 : %s" % ", ".join(unknown))
 
-        self._dice_order(res)
-        res.note("주사위가 높게 뜬 사람부터 위 [등급별 랜덤 픽] 중에서 골라 갑니다.")
+        res.note("위 [등급별 랜덤 픽] 에 뜬 상위들로 클리어하면 됩니다.")
 
     def _follow_gangwon(self, res):
         self.roll_gangwon(res)

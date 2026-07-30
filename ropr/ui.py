@@ -5,33 +5,13 @@ import datetime
 import random
 import re
 import tkinter as tk
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from . import config as config_mod
-from . import data
+from . import data, panels, sound
 from .engine import Roller
-
-BG = "#eef0f4"
-PANEL = "#ffffff"
-INK = "#1b1f27"
-MUTED = "#6b7280"
-LINE = "#d5d9e0"
-ACCENT = "#c8102e"
-ACCENT_DK = "#8e0a1f"
-GOLD = "#b5872a"
-
-FONT_CANDIDATES = (
-    "맑은 고딕", "Malgun Gothic", "NanumGothic", "Nanum Gothic",
-    "Noto Sans CJK KR", "AppleGothic", "WenQuanYi Zen Hei", "DejaVu Sans",
-)
-
-
-def pick_font(root):
-    families = set(tkfont.families(root))
-    for name in FONT_CANDIDATES:
-        if name in families:
-            return name
-    return "TkDefaultFont"
+from .theme import (ACCENT, ACCENT_DK, BG, GOLD, INK, LINE, MUTED, PANEL, SOFT,
+                    pick_font)
 
 
 def parse_int(text, fallback):
@@ -91,6 +71,12 @@ class App(tk.Tk):
         self._spinning = False
         self.last_result = None
         self._history_index = None
+        self.panel = None
+        self.current_title = ""
+        self.config_path = config_mod.config_path()
+
+        sound.set_enabled(bool(self.cfg.get("sound", True)))
+        sound.warm_up()
 
         self.base = pick_font(self)
         self.title("%s  v%s" % (data.APP_TITLE, data.VERSION))
@@ -144,6 +130,18 @@ class App(tk.Tk):
                         background=ACCENT, foreground="white", borderwidth=0)
         style.map("Go.TButton",
                   background=[("active", ACCENT_DK), ("disabled", "#c9ccd3")])
+
+        # 낱개 뽑기 버튼
+        style.configure("Slot.TButton", font=(base, 10, "bold"), padding=(8, 5),
+                        background="#e7ebf2", foreground=ACCENT_DK, borderwidth=0)
+        style.map("Slot.TButton",
+                  background=[("active", "#d5dce8"), ("disabled", "#f0f1f4")],
+                  foreground=[("disabled", "#b3b8c2")])
+        style.configure("Extra.TButton", font=(base, 10, "bold"), padding=(8, 5),
+                        background="#f5e6c8", foreground="#7a5a10", borderwidth=0)
+        style.map("Extra.TButton",
+                  background=[("active", "#eed9a8"), ("disabled", "#f4f4f6")],
+                  foreground=[("disabled", "#b3b8c2")])
 
         style.configure("Treeview", font=(base, 10), rowheight=26,
                         background="white", fieldbackground="white", borderwidth=0)
@@ -209,20 +207,48 @@ class App(tk.Tk):
         ttk.Checkbutton(opts, text="같은 컨텐츠 연속 방지", style="Card.TCheckbutton",
                         variable=self.var_repeat,
                         command=self._sync_toggles).pack(anchor="w")
+        self.var_sound = tk.BooleanVar(value=bool(self.cfg.get("sound", True)))
+        sound_chk = ttk.Checkbutton(opts, text="효과음", style="Card.TCheckbutton",
+                                    variable=self.var_sound, command=self._sync_toggles)
+        sound_chk.pack(anchor="w")
+        if not sound.available():
+            sound_chk.configure(state="disabled")   # 윈도우가 아니면 소리 없음
 
         bottom = tk.Frame(tab, bg=PANEL)
         bottom.pack(side="bottom", fill="x", padx=20, pady=(6, 16))
         ttk.Button(bottom, text="결과 복사", command=self._copy_last).pack(side="left")
         ttk.Button(bottom, text="기록 보기",
                    command=lambda: self.nb.select(5)).pack(side="left", padx=8)
-        # 인생의고도전이 나왔을 때만 켜지는 버튼
-        self.again_btn = ttk.Button(bottom, text="한 번 더 (0~5)", style="Go.TButton",
-                                    state="disabled", command=self._altitude_again)
-        self.again_btn.pack(side="right")
 
-        wrap = self._panel(tab, fill="both", expand=True, padx=20, pady=(4, 0))
-        self.main_result = ResultView(wrap, self.base)
-        self._attach_scroll(wrap, self.main_result)
+        # 결과 자리 : 글자만 찍는 화면과 버튼을 누르는 화면을 갈아 끼운다
+        self.result_host = tk.Frame(tab, bg=PANEL)
+        self.result_host.pack(fill="both", expand=True, padx=20, pady=(4, 0))
+
+        self.text_wrap = tk.Frame(self.result_host, bg=PANEL, highlightthickness=1,
+                                  highlightbackground=LINE)
+        self.main_result = ResultView(self.text_wrap, self.base)
+        self._attach_scroll(self.text_wrap, self.main_result)
+        self.text_wrap.pack(fill="both", expand=True)
+
+        self.panel_wrap = tk.Frame(self.result_host, bg=PANEL, highlightthickness=1,
+                                   highlightbackground=LINE)
+        self.panel_canvas = tk.Canvas(self.panel_wrap, bg=PANEL, highlightthickness=0)
+        panel_sb = ttk.Scrollbar(self.panel_wrap, orient="vertical",
+                                 command=self.panel_canvas.yview)
+        self.panel_canvas.configure(yscrollcommand=panel_sb.set)
+        panel_sb.pack(side="right", fill="y")
+        self.panel_canvas.pack(side="left", fill="both", expand=True)
+        self.panel_holder = tk.Frame(self.panel_canvas, bg=PANEL)
+        self._panel_window = self.panel_canvas.create_window(
+            (0, 0), window=self.panel_holder, anchor="nw")
+        self.panel_holder.bind(
+            "<Configure>",
+            lambda e: self.panel_canvas.configure(
+                scrollregion=self.panel_canvas.bbox("all")))
+        self.panel_canvas.bind(
+            "<Configure>",
+            lambda e: self.panel_canvas.itemconfigure(self._panel_window, width=e.width))
+        self.panel = None
 
     def _panel(self, parent, **pack_kw):
         """테두리 있는 흰 패널. 안에 들어갈 위젯은 이 프레임을 부모로 만들어야 한다."""
@@ -240,6 +266,8 @@ class App(tk.Tk):
     def _sync_toggles(self):
         self.cfg["animate"] = bool(self.var_animate.get())
         self.cfg["avoid_repeat"] = bool(self.var_repeat.get())
+        self.cfg["sound"] = bool(self.var_sound.get())
+        sound.set_enabled(self.cfg["sound"])
 
     def _spin(self):
         if self._spinning:
@@ -247,51 +275,78 @@ class App(tk.Tk):
         if self.nb.index(self.nb.select()) != 0:
             return
         self._sync_toggles()
-        result = self.roller.draw_main()
-
-        if not self.var_animate.get():
-            self._reveal(result)
+        content = self.roller.pick_main()
+        if content is None:
+            self._reveal(self.roller.empty_result())
             return
 
-        names = [c["name"] for c in self.roller.enabled_contents()] or [result.title]
+        if content["id"] in panels.PANELS:
+            finish = lambda: self._open_panel(content)          # noqa: E731
+        else:
+            finish = lambda: self._reveal(self.roller.resolve(content))  # noqa: E731
+
+        if not self.var_animate.get():
+            finish()
+            return
+
+        names = [c["name"] for c in self.roller.enabled_contents()] or [content["name"]]
         self._spinning = True
         self.spin_btn.configure(state="disabled")
         self.main_result.show(None)
-        self._spin_step(names, result, 45.0)
+        self._spin_step(names, finish, 45.0, 0)
 
-    def _spin_step(self, names, result, delay):
+    def _spin_step(self, names, finish, delay, count):
         if delay > 270:
             self._spinning = False
             self.spin_btn.configure(state="normal")
-            self._reveal(result)
+            finish()
             return
         self.main_display.configure(text=random.choice(names), fg="#9aa1ae",
                                     font=(self.base, 22, "bold"))
+        if count % 2 == 0:
+            sound.tick()
         self._spin_job = self.after(
-            int(delay), lambda: self._spin_step(names, result, delay * 1.16))
+            int(delay), lambda: self._spin_step(names, finish, delay * 1.16, count + 1))
 
     def _reveal(self, result):
-        size = 26 if len(result.title) <= 12 else 20
-        self.main_display.configure(text=result.title, fg=ACCENT,
-                                    font=(self.base, size, "bold"))
+        self._set_display(result.title)
+        self._clear_panel()
+        self.panel_wrap.pack_forget()
+        self.text_wrap.pack(fill="both", expand=True)
         self.main_result.show(result)
         self._record(result)
 
-        lo = self.cfg.get("altitude2_min", 0)
-        hi = self.cfg.get("altitude2_max", 5)
-        is_altitude = self.roller.last_main_id == "altitude"
-        self.again_btn.configure(text="한 번 더 (%s~%s)" % (lo, hi),
-                                 state="normal" if is_altitude else "disabled")
+    def _set_display(self, title):
+        self.current_title = title
+        size = 26 if len(title) <= 12 else 20
+        self.main_display.configure(text=title, fg=ACCENT,
+                                    font=(self.base, size, "bold"))
 
-    def _altitude_again(self):
-        """인생의고도전에서 0~5 를 한 번 더 뽑아 결과에 이어 붙인다."""
-        if self.last_result is None or self.roller.last_main_id != "altitude":
+    def _clear_panel(self):
+        if self.panel is not None:
+            self.panel.stop()
+            self.panel.destroy()
+            self.panel = None
+
+    def _open_panel(self, content):
+        """버튼을 눌러가며 뽑는 화면을 띄운다."""
+        self._set_display(content["name"])
+        self._clear_panel()
+        self.text_wrap.pack_forget()
+        self.panel_wrap.pack(fill="both", expand=True)
+
+        self.panel = panels.PANELS[content["id"]](self.panel_holder, self)
+        self.panel.pack(fill="both", expand=True)
+        self.panel_canvas.yview_moveto(0)
+        self._record(self.panel.summary())
+        self._say("%s — 버튼을 눌러서 뽑으세요." % content["name"])
+
+    def refresh_panel_history(self):
+        """패널에서 값이 하나 정해질 때마다 기록을 갱신한다."""
+        if self.panel is None:
             return
-        self.roller.altitude_again(self.last_result)
-        self.main_result.show(self.last_result)
-        self.again_btn.configure(state="disabled")
+        self.last_result = self.panel.summary()
         self._rewrite_last_history()
-        self._say("한 번 더 뽑았어요.")
 
     def _record(self, result):
         self.last_result = result
@@ -576,6 +631,8 @@ class App(tk.Tk):
             ("altitude2_max", "한 번 더 최대", 7),
             ("tier_min", "너의상위는 최소", 8),
             ("tier_max", "너의상위는 최대", 9),
+            ("unlucky_min", "행운의 토큰 최소", 18),
+            ("unlucky_max", "행운의 토큰 최대", 19),
             ("must_legend", "필수 전설 개수", 10),
             ("must_hidden", "필수 히든 개수", 11),
             ("ban_legend", "금지 전설 개수", 12),
