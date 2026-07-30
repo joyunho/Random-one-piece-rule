@@ -23,6 +23,7 @@ class Line:
 class DrawResult:
     title: str
     lines: List[Line] = field(default_factory=list)
+    desc: str = ""            # 그 룰이 뭐 하는 룰인지 한두 줄 설명
 
     def head(self, text):
         self.lines.append(Line(text, "head"))
@@ -40,6 +41,9 @@ class DrawResult:
     def plain(self):
         prefix = {"head": "  ▷ ", "item": "      ", "note": "  · ", "warn": "  ! "}
         out = ["■ %s" % self.title]
+        for line in (self.desc or "").splitlines():
+            if line.strip():
+                out.append("   " + line.strip())
         for line in self.lines:
             out.append(prefix.get(line.kind, "  ") + line.text)
         return "\n".join(out)
@@ -133,7 +137,7 @@ class Roller:
 
     def resolve(self, picked):
         """뽑힌 컨텐츠의 추가 뽑기를 전부 굴려서 글자 결과로 만든다."""
-        res = DrawResult(picked["name"])
+        res = DrawResult(picked["name"], desc=picked.get("desc", ""))
         follow = {
             "force4": self._follow_force4,
             "jits_dice": self._follow_jits_dice,
@@ -410,24 +414,7 @@ class Roller:
             hit = [ch for ch in picked if ch in cores[name]]
             res.item("%s   (%s)" % (name, "·".join(hit)))
 
-        # 위에서 걸린 상위들을 등급별로 나눠서 한 마리씩 뽑는다
-        grades = self._grades()
-        res.head("등급별 랜덤 픽")
-        for grade in grades:
-            candidates = [n for n in matched if grade in n]
-            if candidates:
-                res.item("%s  :  %s" % (grade, self.rng.choice(candidates)))
-            else:
-                res.item("%s  :  (해당하는 상위 없음)" % grade)
-
-        # 등급별 픽은 초/불/영/제 만 하지만, 신비 같은 다른 등급까지 '못 알아봤다' 고
-        # 하면 오해를 부르므로 아는 등급 단어 전체로 판단한다.
-        known = set(grades) | set(self.cfg.get("nyehyung_strip_words") or [])
-        unknown = [n for n in matched if not any(g in n for g in known)]
-        if unknown:
-            res.note("등급을 알아보지 못한 상위 : %s" % ", ".join(unknown))
-
-        res.note("위 [등급별 랜덤 픽] 에 뜬 상위들로 클리어하면 됩니다.")
+        res.note("위 상위들만 써서 클리어하면 됩니다.")
 
     def _follow_gangwon(self, res):
         self.roll_gangwon(res)

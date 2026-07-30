@@ -2,7 +2,8 @@
 """버튼을 하나씩 눌러서 뽑는 결과 화면들.
 
 메인 뽑기에서 아래 컨텐츠가 나오면 글자만 찍는 대신 이 패널이 뜬다.
-    인생의고도전 / 너의상위는 / 지츠'다이스'룰 / 이캐릭들필수에요 / 녜힁제조기
+    인생의고도전 / 너의상위는 / 지츠'다이스'룰 / 이캐릭들필수·금지에요 /
+    녜힁제조기 / 내가 제일 운 없어
 """
 
 import random
@@ -20,13 +21,24 @@ class SpinPanel(tk.Frame):
 
     title = ""
 
-    def __init__(self, master, app):
+    def __init__(self, master, app, content=None):
         super().__init__(master, bg=PANEL)
         self.app = app
         self.base = app.base
+        self.content = content or {}
         self._jobs = []
         self._busy = set()
+        self._show_desc()
         self.build()
+
+    def _show_desc(self):
+        """이 룰이 뭐 하는 룰인지 맨 위에 적어준다."""
+        text = (self.content.get("desc") or "").strip()
+        if not text:
+            return
+        tk.Label(self, text=text, bg="#f5f7fb", fg="#41506b", justify="left",
+                 wraplength=880, font=(self.base, 10), anchor="w",
+                 padx=12, pady=8).pack(fill="x", padx=18, pady=(12, 0))
 
     # ------------------------------------------------------------- 하위 클래스용
     def build(self):
@@ -37,7 +49,7 @@ class SpinPanel(tk.Frame):
         raise NotImplementedError
 
     # ---------------------------------------------------------------- 연출
-    def spin(self, key, label, frames, final, button=None,
+    def spin(self, key, label, frames, final, button=None, once=False,
              fg=None, badge=None, badge_unit=None, on_done=None, end_sound=None):
         """label 의 글자를 frames 안에서 촤르륵 바꾸다가 final 에서 멈춘다."""
         if key in self._busy:
@@ -53,8 +65,8 @@ class SpinPanel(tk.Frame):
                 if badge is not None:
                     badge.show(badge_unit, config_path=self.app.config_path)
                 self._busy.discard(key)
-                if button is not None:
-                    button.configure(state="normal")
+                if button is not None and not once:
+                    button.configure(state="normal")   # once=True 면 한 번만 눌린다
                 (end_sound or sound.settle)()
                 if on_done:
                     on_done()
@@ -219,7 +231,7 @@ class AltitudePanel(SpinPanel):
                   button=row["extra_btn"], fg=GOLD, on_done=done)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
         res.head("인생의 고도  ( %d ~ %d,  추가 %d ~ %d )"
                  % (self.lo, self.hi, self.elo, self.ehi))
         for color in self.colors:
@@ -303,7 +315,7 @@ class TierPanel(SpinPanel):
                   on_done=done, end_sound=sound.taunt if top else None)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
         res.head("너의 상위는  ( %d ~ %d )" % (self.lo, self.hi))
         for color in self.colors:
             n = self.rows[color]["n"]
@@ -414,7 +426,7 @@ class JitsDicePanel(SpinPanel):
                 "%d위 %s" % (i + 1, c) for i, c in enumerate(order)), fg=ACCENT_DK)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
         res.head("등급별 후보")
         for grade in self.grades:
             unit = self.slots[grade]["unit"]
@@ -436,19 +448,21 @@ class JitsDicePanel(SpinPanel):
         return res
 
 
-# ---------------------------------------------------------- 이캐릭들필수에요
-class MustCharPanel(SpinPanel):
-    title = "이캐릭들필수에요"
+# ------------------------------------------- 이캐릭들필수에요 / 이캐릭들금지에요
+class CharPickPanel(SpinPanel):
+    """칸마다 버튼을 눌러서 캐릭터를 하나씩 뽑는 화면."""
+
+    head_text = ""
+    summary_head = ""
+    spec_keys = ()      # ((표시이름, 설정키, 개수설정키, 기본개수), ...)
 
     def build(self):
         roller = self.app.roller
-        self.specs = (
-            ("전설", "legend_chars", roller._int("must_legend", 4)),
-            ("히든", "hidden_chars", roller._int("must_hidden", 4)),
-        )
+        self.specs = tuple((title, key, roller._int(count_key, default))
+                           for title, key, count_key, default in self.spec_keys)
         self.slots = {}
 
-        self.heading("칸마다 버튼을 눌러서 필수 캐릭터를 뽑으세요")
+        self.heading(self.head_text)
         wrap = tk.Frame(self, bg=PANEL)
         wrap.pack(anchor="w", padx=18, pady=(4, 0))
 
@@ -456,7 +470,7 @@ class MustCharPanel(SpinPanel):
             box = tk.Frame(wrap, bg=PANEL, highlightthickness=1,
                            highlightbackground=LINE)
             box.grid(row=0, column=col, padx=8, sticky="n")
-            tk.Label(box, text="%s %d개" % (title, count), bg=PANEL, fg=ACCENT_DK,
+            tk.Label(box, text="%s %d명" % (title, count), bg=PANEL, fg=ACCENT_DK,
                      font=(self.base, 12, "bold")).pack(pady=(8, 4))
 
             pool = self.app.roller.cfg.get(key) or []
@@ -505,14 +519,30 @@ class MustCharPanel(SpinPanel):
                 self.roll(key, i)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
-        res.head("필수로 써야 하는 캐릭터")
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
+        res.head(self.summary_head)
         for title, key, count in self.specs:
             picked = [self.slots[(key, i)]["value"] for i in range(count)]
             done = [p for p in picked if p]
             res.item("%s %d/%d  :  %s" % (title, len(done), count,
                                           ",  ".join(done) if done else "아직 안 뽑음"))
         return res
+
+
+class MustCharPanel(CharPickPanel):
+    title = "이캐릭들필수에요"
+    head_text = "칸마다 버튼을 눌러서 필수 캐릭터를 뽑으세요"
+    summary_head = "필수로 써야 하는 캐릭터"
+    spec_keys = (("전설", "legend_chars", "must_legend", 4),
+                 ("히든", "hidden_chars", "must_hidden", 4))
+
+
+class BanCharPanel(CharPickPanel):
+    title = "이캐릭들금지에요"
+    head_text = "칸마다 버튼을 눌러서 금지 캐릭터를 뽑으세요"
+    summary_head = "금지된 캐릭터"
+    spec_keys = (("전설", "legend_chars", "ban_legend", 7),
+                 ("히든", "hidden_chars", "ban_hidden", 7))
 
 
 # ------------------------------------------------------------------ 녜힁제조기
@@ -522,12 +552,10 @@ class NyehyungPanel(SpinPanel):
     def build(self):
         roller = self.app.roller
         self.count = max(1, roller._int("nyehyung_count", 2))
-        self.grades = roller._grades()
         pool, _cores = roller.letter_pool()
         self.letters_pool = sorted(pool)
         self.letters = [None] * self.count
         self.letter_cells = []
-        self.picks = {}
 
         self.heading("상위 이름에 들어있는 글자를 %d개 뽑으세요" % self.count)
         row = tk.Frame(self, bg=PANEL)
@@ -552,37 +580,16 @@ class NyehyungPanel(SpinPanel):
             tk.Label(self, text="상위 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.",
                      bg=PANEL, fg="#b91c1c",
                      font=(self.base, 11, "bold")).pack(anchor="w", padx=18, pady=8)
+            self.matched_label = None
             return
 
-        self.matched_label = tk.Label(self, text="", bg=PANEL, fg=INK, justify="left",
-                                      font=(self.base, 11), wraplength=880)
         self.heading("사용 가능한 상위")
+        self.matched_label = tk.Label(self, text="글자를 뽑으면 여기에 나옵니다.",
+                                      bg=PANEL, fg=MUTED, justify="left",
+                                      font=(self.base, 11), wraplength=880)
         self.matched_label.pack(anchor="w", padx=30, pady=(0, 2))
-        self.matched_label.configure(text="글자를 뽑으면 여기에 나옵니다.", fg=MUTED)
+        self.hint("여기 뜬 상위들만 써서 클리어하면 됩니다.")
 
-        self.heading("등급별 랜덤 픽")
-        pick_row = tk.Frame(self, bg=PANEL)
-        pick_row.pack(anchor="w", padx=18, pady=(2, 0))
-        for col, grade in enumerate(self.grades):
-            card = tk.Frame(pick_row, bg=PANEL, highlightthickness=1,
-                            highlightbackground=LINE)
-            card.grid(row=0, column=col, padx=6, sticky="n")
-            tk.Label(card, text=grade, bg=PANEL, fg=INK,
-                     font=(self.base, 11, "bold")).pack(pady=(6, 2))
-            badge = images.Badge(card, size=44, bg=PANEL)
-            badge.pack()
-            badge.show(None, grade=grade)
-            name = tk.Label(card, text="–", bg=SOFT, fg=MUTED, width=16,
-                            font=(self.base, 10, "bold"), wraplength=140,
-                            highlightthickness=1, highlightbackground=LINE, pady=3)
-            name.pack(padx=8, pady=(4, 0))
-            btn = ttk.Button(card, text="뽑기", style="Slot.TButton", state="disabled",
-                             command=lambda g=grade: self.roll_pick(g))
-            btn.pack(fill="x", padx=8, pady=(4, 8))
-            self.picks[grade] = {"badge": badge, "name": name, "btn": btn,
-                                 "unit": None}
-
-    # ------------------------------------------------------------------
     def roll_letter(self, index):
         cell = self.letter_cells[index]
         used = [l for l in self.letters if l]
@@ -603,40 +610,19 @@ class NyehyungPanel(SpinPanel):
         return self.app.roller.matched_uppers([l for l in self.letters if l])
 
     def _refresh_matched(self):
+        if self.matched_label is None:
+            return
         matched = self._matched()
         if not matched:
             self.matched_label.configure(text="글자를 뽑으면 여기에 나옵니다.", fg=MUTED)
-        else:
-            self.matched_label.configure(
-                text="(%d마리)   " % len(matched)
-                     + "   ·   ".join("%s [%s]" % (n, "".join(h)) for n, h in matched),
-                fg=INK)
-        names = [n for n, _h in matched]
-        for grade, slot in self.picks.items():
-            pool = [n for n in names if grade in n]
-            slot["pool"] = pool
-            slot["btn"].configure(state="normal" if pool else "disabled")
-            if not pool:
-                slot["unit"] = None
-                slot["name"].configure(text="(해당 상위 없음)", fg=MUTED)
-                slot["badge"].show(None, grade=grade)
-
-    def roll_pick(self, grade):
-        slot = self.picks[grade]
-        pool = slot.get("pool") or []
-        if not pool:
             return
-        unit = self.app.roller.rng.choice(pool)
-
-        def done():
-            slot["unit"] = unit
-
-        self.spin("pick:" + grade, slot["name"], pool, unit,
-                  button=slot["btn"], fg=INK, badge=slot["badge"],
-                  badge_unit=unit, on_done=done)
+        self.matched_label.configure(
+            text="(%d마리)   " % len(matched)
+                 + "   ·   ".join("%s [%s]" % (n, "".join(h)) for n, h in matched),
+            fg=INK)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
         picked = [l for l in self.letters if l]
         res.head("상위 이름에서 %d글자 뽑기" % self.count)
         res.item("뽑힌 글자  ▶   %s" % (" ,  ".join(picked) if picked else "아직 안 뽑음"))
@@ -647,10 +633,7 @@ class NyehyungPanel(SpinPanel):
         res.head("사용 가능한 상위 (%d마리)" % len(matched))
         for name, hit in matched:
             res.item("%s   (%s)" % (name, "·".join(hit)))
-        res.head("등급별 랜덤 픽")
-        for grade in self.grades:
-            unit = self.picks[grade]["unit"]
-            res.item("%s  :  %s" % (grade, unit or "아직 안 뽑음"))
+        res.note("위 상위들만 써서 클리어하면 됩니다.")
         return res
 
 
@@ -689,15 +672,20 @@ class UnluckyPanel(SpinPanel):
             mark.pack()
             btn = ttk.Button(card, text="토큰 뽑기", style="Slot.TButton",
                              command=lambda c=color: self.roll(c))
-            btn.pack(fill="x", padx=10, pady=(6, 10))
+            btn.pack(fill="x", padx=10, pady=(6, 2))
+            again = ttk.Button(card, text="스토리 과반 → 재뽑기", style="Extra.TButton",
+                               state="disabled",
+                               command=lambda c=color: self.reroll(c))
+            again.pack(fill="x", padx=10, pady=(0, 10))
 
             self.rows[color] = {"value": value, "coins": coins, "mark": mark,
-                                "btn": btn, "n": None}
+                                "btn": btn, "again": again, "n": None,
+                                "rerolled": False}
 
         self.verdict = tk.Label(self, text="", bg=PANEL, fg=ACCENT_DK,
                                 font=(self.base, 12, "bold"))
         self.verdict.pack(anchor="w", padx=18, pady=(10, 0))
-        self.hint("행운의 토큰을 쓰지 않고 클리어하면, 가진 토큰 숫자만큼 유카를 줄일 수 있습니다.")
+        self.hint("제일 운 없는 사람은 스토리를 과반 이상 먹으면 [재뽑기] 로 토큰을 한 번 더 뽑을 수 있습니다.")
 
     def _coins(self, color, count):
         canvas = self.rows[color]["coins"]
@@ -711,7 +699,7 @@ class UnluckyPanel(SpinPanel):
             canvas.create_text(55, 11, text="토큰 없음", fill=MUTED,
                                font=(self.base, 9))
 
-    def roll(self, color):
+    def roll(self, color, key="unlucky", button_key="btn", once=False):
         row = self.rows[color]
         value = self.app.roller.roll((self.lo, self.hi))
 
@@ -720,10 +708,19 @@ class UnluckyPanel(SpinPanel):
             self._coins(color, value)
             self._verdict()
 
-        self.spin("unlucky:" + color, row["value"],
-                  list(range(self.lo, self.hi + 1)), value, button=row["btn"],
+        self.spin("%s:%s" % (key, color), row["value"],
+                  list(range(self.lo, self.hi + 1)), value,
+                  button=row[button_key], once=once,
                   fg=COLOR_HEX.get(color, ACCENT), on_done=done,
                   end_sound=sound.thud if value == self.lo else None)
+
+    def reroll(self, color):
+        """제일 운 없는 사람이 스토리를 과반 이상 먹었을 때 한 번 더."""
+        row = self.rows[color]
+        if row["rerolled"] or str(row["again"].cget("state")) != "normal":
+            return
+        row["rerolled"] = True
+        self.roll(color, key="reroll", button_key="again", once=True)
 
     def _verdict(self):
         rolled = {c: r["n"] for c, r in self.rows.items() if r["n"] is not None}
@@ -735,14 +732,17 @@ class UnluckyPanel(SpinPanel):
             return
         fewest = min(rolled.values())
         losers = [c for c in self.colors if rolled[c] == fewest]
-        for color in losers:
-            self.rows[color]["mark"].configure(text="제일 운 없어")
+        for color, row in self.rows.items():
+            is_loser = color in losers
+            row["mark"].configure(text="제일 운 없어" if is_loser else " ")
+            if not row["rerolled"]:
+                row["again"].configure(state="normal" if is_loser else "disabled")
         self.verdict.configure(
             text="제일 운 없는 사람   ▶   %s   (토큰 %d개)"
                  % (" · ".join(losers), fewest), fg=ACCENT_DK)
 
     def summary(self):
-        res = DrawResult(self.app.current_title)
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
         res.head("행운의 토큰  ( %d ~ %d )" % (self.lo, self.hi))
         rolled = {}
         for color in self.colors:
@@ -765,6 +765,7 @@ PANELS = {
     "your_tier": TierPanel,
     "jits_dice": JitsDicePanel,
     "must_char": MustCharPanel,
+    "ban_char": BanCharPanel,
     "nyehyung": NyehyungPanel,
     "unlucky": UnluckyPanel,
 }

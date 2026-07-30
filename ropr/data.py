@@ -29,21 +29,71 @@ GRADE_POOL = ["초월", "불멸", "영원", "제한", "신비"]
 #   name   : 화면에 보이는 이름 (설정에서 수정 가능)
 #   follow : 뽑힌 뒤에 이어지는 추가 뽑기 종류
 CONTENTS = [
-    {"id": "story_bomber",     "name": "스토리 폭격기전",              "follow": None},
-    {"id": "adcarry",          "name": "원딜전(물1마1)",               "follow": None},
-    {"id": "force4",           "name": "4인 강제전",                   "follow": "force4"},
-    {"id": "jits_dice",        "name": "지츠'다이스'룰",               "follow": "jits_dice"},
-    {"id": "nightmare",        "name": "변질된 악몽",                  "follow": None},
-    {"id": "nyehyung",         "name": "녜힁제조기",                   "follow": "nyehyung"},
-    {"id": "altitude",         "name": "인생의고도전(0~15)",           "follow": "altitude"},
-    {"id": "mystic_world",     "name": "신비한이세계전",               "follow": None},
-    {"id": "your_tier",        "name": "너의상위는(0~4)",              "follow": "your_tier"},
-    {"id": "must_char",        "name": "이캐릭들필수에요(4전설+4히든)", "follow": "must_char"},
-    {"id": "ban_char",         "name": "이캐릭들금지에요(7전설+7히든)", "follow": "ban_char"},
-    {"id": "gangwon",          "name": "강원랜디",                     "follow": "gangwon"},
-    {"id": "personal_mission", "name": "개인미션전",                   "follow": None},
-    {"id": "random_nav",       "name": "랜덤항법전",                   "follow": None},
-    {"id": "unlucky",          "name": "내가 제일 운 없어",            "follow": "unlucky"},
+    {
+        "id": "story_bomber", "name": "스토리 폭격기전", "follow": None,
+        "desc": "",
+    },
+    {
+        "id": "adcarry", "name": "원딜전(물1마1)", "follow": None,
+        "desc": "물1 마1 구성으로 진행합니다.",
+    },
+    {
+        "id": "force4", "name": "4인 강제전", "follow": "force4",
+        "desc": "초 · 불 · 영 · 제 중에서 하나를 뽑아, 그 등급으로 진행합니다.",
+    },
+    {
+        "id": "jits_dice", "name": "지츠'다이스'룰", "follow": "jits_dice",
+        "desc": "등급마다 상위를 한 마리씩 뽑아 놓고, 빨/파/보/노가 주사위를 굴려 "
+                "높게 뜬 사람부터 그중 하나를 골라 갑니다.",
+    },
+    {
+        "id": "nightmare", "name": "변질된 악몽", "follow": None,
+        "desc": "",
+    },
+    {
+        "id": "nyehyung", "name": "녜힁제조기", "follow": "nyehyung",
+        "desc": "상위 이름에 들어있는 글자를 2개 뽑고, 그 글자가 이름에 포함된 "
+                "상위만 사용해서 클리어합니다.",
+    },
+    {
+        "id": "altitude", "name": "인생의고도전(0~15)", "follow": "altitude",
+        "desc": "색깔별로 0~15 를 뽑습니다. [추가 고도] 를 누르면 0~5 가 나와서 "
+                "기존 고도에 자동으로 더해집니다.",
+    },
+    {
+        "id": "mystic_world", "name": "신비한이세계전", "follow": None,
+        "desc": "",
+    },
+    {
+        "id": "your_tier", "name": "너의상위는(0~4)", "follow": "your_tier",
+        "desc": "빨/파/보/노가 각각 0~4 를 뽑아, 그 개수만큼 상위를 씁니다.",
+    },
+    {
+        "id": "must_char", "name": "이캐릭들필수에요(4전설+4히든)", "follow": "must_char",
+        "desc": "전설 4명 · 히든 4명을 뽑습니다. 뽑힌 캐릭터는 반드시 써야 합니다.",
+    },
+    {
+        "id": "ban_char", "name": "이캐릭들금지에요(7전설+7히든)", "follow": "ban_char",
+        "desc": "전설 7명 · 히든 7명을 뽑습니다. 뽑힌 캐릭터는 쓸 수 없습니다.",
+    },
+    {
+        "id": "gangwon", "name": "강원랜디", "follow": "gangwon",
+        "desc": "확률표에서 결과를 하나 뽑습니다. 숫자 범위가 붙은 결과는 숫자까지 뽑습니다.",
+    },
+    {
+        "id": "personal_mission", "name": "개인미션전", "follow": None,
+        "desc": "",
+    },
+    {
+        "id": "random_nav", "name": "랜덤항법전", "follow": None,
+        "desc": "",
+    },
+    {
+        "id": "unlucky", "name": "내가 제일 운 없어", "follow": "unlucky",
+        "desc": "색깔별로 행운의 토큰을 뽑습니다. 토큰을 쓰지 않고 클리어하면 "
+                "가진 토큰 숫자만큼 유카를 줄일 수 있습니다.\n"
+                "제일 적게 받은 사람은 스토리를 과반 이상 먹으면 토큰을 한 번 더 뽑을 수 있습니다.",
+    },
 ]
 
 

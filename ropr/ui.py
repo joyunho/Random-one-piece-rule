@@ -34,6 +34,8 @@ class ResultView(tk.Text):
         )
         self.tag_configure("title", font=(base, 16, "bold"), foreground=ACCENT,
                            spacing1=4, spacing3=8)
+        self.tag_configure("desc", font=(base, 10), foreground="#41506b",
+                           lmargin1=6, lmargin2=6, spacing1=2, spacing3=6)
         self.tag_configure("head", font=(base, 10, "bold"), foreground="#475569",
                            spacing1=12, spacing3=4)
         self.tag_configure("item", font=(base, 13), foreground=INK,
@@ -52,6 +54,9 @@ class ResultView(tk.Text):
         self.delete("1.0", "end")
         if result is not None:
             self.insert("end", result.title + "\n", "title")
+            for line in (result.desc or "").splitlines():
+                if line.strip():
+                    self.insert("end", line.strip() + "\n", "desc")
             for line in result.lines:
                 tags = [line.kind]
                 if line.color:
@@ -335,7 +340,7 @@ class App(tk.Tk):
         self.text_wrap.pack_forget()
         self.panel_wrap.pack(fill="both", expand=True)
 
-        self.panel = panels.PANELS[content["id"]](self.panel_holder, self)
+        self.panel = panels.PANELS[content["id"]](self.panel_holder, self, content)
         self.panel.pack(fill="both", expand=True)
         self.panel_canvas.yview_moveto(0)
         self._record(self.panel.summary())
@@ -599,7 +604,7 @@ class App(tk.Tk):
             tk.Frame(inner, bg=LINE, height=1).pack(fill="x", padx=20, pady=(0, 8))
 
         # --- 메인 컨텐츠 목록
-        section("메인 컨텐츠  (체크 = 뽑기 대상, 가중치가 클수록 자주 나옴)")
+        section("메인 컨텐츠  (체크 = 뽑기 대상 · 가중치가 클수록 자주 나옴 · 설명은 결과창 맨 위에 뜸)")
         grid = tk.Frame(inner, bg=PANEL)
         grid.pack(fill="x", padx=24)
         self.content_rows = []
@@ -607,13 +612,16 @@ class App(tk.Tk):
             var = tk.BooleanVar(value=bool(item.get("enabled", True)))
             ttk.Checkbutton(grid, style="Card.TCheckbutton", variable=var).grid(
                 row=i, column=0, sticky="w", pady=1)
-            name = ttk.Entry(grid, width=34, font=(self.base, 10))
+            name = ttk.Entry(grid, width=26, font=(self.base, 10))
             name.insert(0, item.get("name", ""))
-            name.grid(row=i, column=1, sticky="w", padx=(2, 10), pady=1)
-            weight = ttk.Entry(grid, width=6, font=(self.base, 10))
+            name.grid(row=i, column=1, sticky="w", padx=(2, 6), pady=1)
+            weight = ttk.Entry(grid, width=5, font=(self.base, 10))
             weight.insert(0, str(item.get("weight", 1.0)))
-            weight.grid(row=i, column=2, sticky="w", pady=1)
-            self.content_rows.append((item["id"], var, name, weight))
+            weight.grid(row=i, column=2, sticky="w", padx=(0, 6), pady=1)
+            desc = ttk.Entry(grid, width=52, font=(self.base, 10))
+            desc.insert(0, (item.get("desc", "") or "").replace("\n", "  "))
+            desc.grid(row=i, column=3, sticky="we", pady=1)
+            self.content_rows.append((item["id"], var, name, weight, desc))
 
         # --- 숫자 설정
         section("숫자 설정")
@@ -696,7 +704,7 @@ class App(tk.Tk):
 
     def _save_settings(self):
         contents = []
-        for content_id, var, name_entry, weight_entry in self.content_rows:
+        for content_id, var, name_entry, weight_entry, desc_entry in self.content_rows:
             try:
                 weight = float(weight_entry.get().strip())
             except ValueError:
@@ -704,6 +712,7 @@ class App(tk.Tk):
             contents.append({
                 "id": content_id,
                 "name": name_entry.get().strip() or content_id,
+                "desc": desc_entry.get().strip(),
                 "enabled": bool(var.get()),
                 "weight": weight,
             })

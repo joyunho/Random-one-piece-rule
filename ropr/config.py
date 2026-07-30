@@ -95,7 +95,7 @@ def default_config():
 
         # 내가 제일 운 없어 : 플레이어별 행운의 토큰 개수
         "unlucky_min": 0,
-        "unlucky_max": 5,
+        "unlucky_max": 10,
 
         # 이캐릭들필수에요 / 이캐릭들금지에요
         "must_legend": 4,
@@ -111,7 +111,8 @@ def default_config():
         "sound": True,
 
         "contents": [
-            {"id": c["id"], "name": c["name"], "enabled": True, "weight": 1.0}
+            {"id": c["id"], "name": c["name"], "desc": c.get("desc", ""),
+             "enabled": True, "weight": 1.0}
             for c in data.CONTENTS
         ],
         "gangwon": copy.deepcopy(data.GANGWON_TABLE),
@@ -144,6 +145,7 @@ def _merge(loaded):
         old = saved.get(base["id"])
         if old:
             item["name"] = old.get("name", item["name"])
+            item["desc"] = old.get("desc", item["desc"])
             item["enabled"] = bool(old.get("enabled", True))
             try:
                 item["weight"] = float(old.get("weight", 1.0))

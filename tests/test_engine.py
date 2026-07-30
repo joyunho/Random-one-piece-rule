@@ -149,7 +149,7 @@ class TestFollowUps(unittest.TestCase):
                     tokens[line.color] = int(line.text.split(":")[1].replace("개", ""))
             self.assertEqual(set(tokens), set(data.COLORS))
             for value in tokens.values():
-                self.assertTrue(0 <= value <= 5)
+                self.assertTrue(0 <= value <= 10)
 
             verdict = [l.text for l in result.lines if l.text.startswith("▶")][0]
             fewest = min(tokens.values())
@@ -182,7 +182,8 @@ class TestNyehyung(unittest.TestCase):
 
             text = [l.text for l in result.lines]
             start = [i for i, t in enumerate(text) if t.startswith("사용 가능한 상위")][0]
-            matched = text[start + 1:text.index("등급별 랜덤 픽")]
+            matched = [t for t in text[start + 1:]
+                       if not t.startswith("위 상위들만")]
             self.assertGreaterEqual(len(matched), 1, "최소 1마리는 나와야 한다")
             for line in matched:
                 name = line.split("(")[0].strip()
@@ -199,35 +200,23 @@ class TestNyehyung(unittest.TestCase):
             for letter in letters:
                 self.assertNotIn(letter, "초월불멸영원제한신비")
 
-    def test_등급별로_한마리씩_뽑는다(self):
+    def test_등급별_랜덤픽과_주사위가_없다(self):
         from ropr.engine import DrawResult
         for seed in range(120):
             roller = make_roller(seed, upper_chars=self.UPPERS)
             result = DrawResult("녜힁제조기")
             roller._follow_nyehyung(result)
             text = [l.text for l in result.lines]
-
-            start = text.index("등급별 랜덤 픽")
-            picks = text[start + 1:start + 1 + len(data.GRADES)]
-            self.assertEqual(len(picks), 4)
-
-            matched_head = [t for t in text if t.startswith("사용 가능한 상위")][0]
-            count = int(matched_head.split("(")[1].split("마리")[0])
-            matched = [t.split("(")[0].strip() for t in text[text.index(matched_head) + 1:start]]
-            self.assertEqual(len(matched), count)
-
-            for grade, line in zip(data.GRADES, picks):
-                self.assertTrue(line.startswith(grade), line)
-                name = line.split(":")[1].strip()
-                if name == "(해당하는 상위 없음)":
-                    self.assertFalse([m for m in matched if grade in m], grade)
-                else:
-                    self.assertIn(name, matched, "뽑힌 상위는 사용 가능 목록 안에 있어야 한다")
-                    self.assertIn(grade, name)
-
-            # 녜힁제조기에는 주사위가 없다
+            self.assertNotIn("등급별 랜덤 픽", text)
             self.assertEqual([l for l in result.lines if l.color], [])
             self.assertFalse([t for t in text if "주사위" in t or "고르는 순서" in t])
+
+            # 걸린 상위는 전부 그대로 나열된다
+            head = [t for t in text if t.startswith("사용 가능한 상위")][0]
+            count = int(head.split("(")[1].split("마리")[0])
+            listed = [t for t in text[text.index(head) + 1:]
+                      if not t.startswith("위 상위들만")]
+            self.assertEqual(len(listed), count)
 
     def test_걸린_상위는_2마리가_넘어도_전부_나온다(self):
         from ropr.engine import DrawResult
