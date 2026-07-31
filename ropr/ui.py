@@ -573,7 +573,9 @@ class App(tk.Tk):
         specs = (
             ("legend_chars", "전설", "이캐릭들필수/금지에 쓰입니다."),
             ("hidden_chars", "히든", "이캐릭들필수/금지에 쓰입니다."),
-            ("upper_chars", "상위", "녜힁제조기에 쓰입니다.  이름 (등급) 형식."),
+            ("upper_chars", "상위",
+             "녜힁제조기 · 4인 강제전 · 지츠다이스룰.  이름 (등급) 형식."),
+            ("random_unit_chars", "랜덤/콜라보", "필수!랜덤유닛획득에 쓰입니다."),
         )
         for key, title, hint in specs:
             col = tk.Frame(body, bg=PANEL)

@@ -144,7 +144,8 @@ class Roller:
             "nyehyung": self._follow_nyehyung,
             "altitude": self._follow_altitude,
             "your_tier": self._follow_your_tier,
-            "unlucky": self._follow_unlucky,
+            "required_random_unit": self._follow_random_unit,
+            "personal_mission": self._follow_personal_mission,
             "must_char": self._follow_must_char,
             "ban_char": self._follow_ban_char,
             "gangwon": self._follow_gangwon,
@@ -215,68 +216,91 @@ class Roller:
         return {c: self.rng.randint(lo, hi) for c in colors}
 
     def _follow_altitude(self, res):
-        """인생의고도전 → 0~15 뽑기. ([한 번 더] 를 누르면 0~5 를 한 번 더 뽑는다)"""
-        base = self._int("altitude_base", 0)
-        lo, hi = self._range("altitude_min", "altitude_max", 0, 15)
-        label = "인생의 고도  ( %d ~ %d )" % (lo, hi)
-        if base:
-            label = "인생의 고도  ( 기본 %d  +  %d~%d )" % (base, lo, hi)
-        res.head(label)
-        self._spread(res, lo, hi, base)
-
-    def altitude_again(self, res):
-        """인생의고도전에서 [한 번 더] 를 눌렀을 때 → 0~5 한 번 더."""
-        lo, hi = self._range("altitude2_min", "altitude2_max", 0, 5)
-        res.head("한 번 더  ( %d ~ %d )" % (lo, hi))
-        self._spread(res, lo, hi, 0)
-        return res
-
-    def _spread(self, res, lo, hi, base):
-        """설정에 따라 플레이어별로 뽑거나, 다같이 쓰는 숫자 하나만 뽑는다."""
-        if not self.cfg.get("altitude_per_player", True):
-            value = self.rng.randint(lo, hi)
-            if base:
-                res.item("▶  %d + %d  =  %d" % (base, value, base + value))
-            else:
-                res.item("▶  %d" % value)
-            return
-        for color in self._colors():
-            value = self.rng.randint(lo, hi)
-            if base:
-                res.item("%s  :  %d + %d  =  %d" % (color, base, value, base + value),
-                         color=color)
-            else:
-                res.item("%s  :  %d" % (color, value), color=color)
-
-    def _follow_your_tier(self, res):
-        """너의상위는 → 빨/파/보/노 개별로 0~4."""
-        lo, hi = self._range("tier_min", "tier_max", 0, 4)
-        res.head("너의 상위는  ( %d ~ %d )" % (lo, hi))
+        """인생의고도전 → 플레이어별 10~20."""
+        lo, hi = self.altitude_range()
+        res.head("인생의 고도  ( %d ~ %d )" % (lo, hi))
         for color in self._colors():
             res.item("%s  :  %d" % (color, self.rng.randint(lo, hi)), color=color)
+        res.note("졸업보상을 가장 늦게 받은 1명만 추가 추첨을 한 번 더 합니다.")
 
-    def unlucky_range(self):
-        return self._range("unlucky_min", "unlucky_max", 0, 5)
+    def altitude_again(self, res):
+        """추가 추첨. 범위가 확인되지 않았으면 뽑지 않는다."""
+        span = self.altitude_extra_range()
+        if span is None:
+            res.warn("추가 추첨 범위가 정해지지 않았어요 → [설정] 탭에서 지정해 주세요. "
+                     "(영상에서 확인되지 않은 값이라 임의로 채우지 않습니다)")
+            return res
+        lo, hi = span
+        res.head("추가 추첨  ( %d ~ %d )" % (lo, hi))
+        res.item("▶  %d" % self.rng.randint(lo, hi))
+        return res
 
-    def _follow_unlucky(self, res):
-        """내가 제일 운 없어.
+    def tier_range(self):
+        return self._range("tier_min", "tier_max", 1, 5)
 
-        플레이어마다 행운의 토큰을 뽑는다. 토큰을 안 쓰고 클리어하면
-        토큰 숫자만큼 유카를 줄일 수 있다.
-        """
+    def tier_zero_roll(self):
+        """이 눈금이 나오면 상위 0. (영상 기준 5)"""
+        return self._int("tier_zero_roll", 5)
+
+    def applied_tier(self, raw):
+        """뽑힌 눈금 -> 실제 상위 개수. 5 -> 0, 나머지는 그대로."""
+        return 0 if raw == self.tier_zero_roll() else raw
+
+    def _follow_your_tier(self, res):
+        """너의상위는 → 1~5 를 뽑고, 5 가 나오면 0상위."""
+        lo, hi = self.tier_range()
+        res.head("너의 상위는  ( %d ~ %d 뽑기,  %d 는 0상위 )"
+                 % (lo, hi, self.tier_zero_roll()))
+        for color in self._colors():
+            raw = self.rng.randint(lo, hi)
+            applied = self.applied_tier(raw)
+            if applied == raw:
+                res.item("%s  :  %d  →  상위 %d" % (color, raw, applied), color=color)
+            else:
+                res.item("%s  :  %d  →  상위 %d  (상위 없음)" % (color, raw, applied),
+                         color=color)
+
+    # ------------------------------------------------- 필수!랜덤유닛획득
+    def random_unit_pool(self):
+        return clean_names(self.cfg.get("random_unit_chars"))
+
+    def _follow_random_unit(self, res):
+        """플레이어마다 랜덤/콜라보 유닛을 하나씩. 중복 없이 먼저 확정한다."""
         colors = self._colors()
-        lo, hi = self.unlucky_range()
-        tokens = {c: self.rng.randint(lo, hi) for c in colors}
+        pool = self.random_unit_pool()
+        res.head("플레이어별 필수 유닛")
+        if not pool:
+            res.warn("랜덤유닛 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
+            return
+        take = min(len(colors), len(pool))
+        picked = self.rng.sample(pool, take)
+        for i, color in enumerate(colors):
+            if i < len(picked):
+                res.item("%s  :  %s" % (color, picked[i]), color=color)
+            else:
+                res.item("%s  :  (유닛이 모자람)" % color, color=color)
+        if take < len(colors):
+            res.warn("랜덤유닛이 %d개뿐이라 %d명은 배정을 못 받았어요."
+                     % (len(pool), len(colors) - take))
+        res.note("배정받은 유닛은 반드시 만들어야 합니다. 이후 상위 재료로 소비해도 인정됩니다.")
 
-        res.head("행운의 토큰  ( %d ~ %d )" % (lo, hi))
-        for color in colors:
-            res.item("%s  :  %d개" % (color, tokens[color]), color=color)
+    # ------------------------------------------------------------- 개인미션전
+    def mission_count(self):
+        return max(1, self._int("mission_count", 3))
 
-        fewest = min(tokens.values())
-        losers = [c for c in colors if tokens[c] == fewest]
-        res.head("제일 운 없는 사람")
-        res.item("▶  %s   (토큰 %d개)" % (" · ".join(losers), fewest))
-        res.note("행운의 토큰을 쓰지 않고 클리어하면, 가진 토큰 숫자만큼 유카를 줄일 수 있습니다.")
+    def mission_penalty(self):
+        return max(0, self._int("mission_penalty", 10))
+
+    def _follow_personal_mission(self, res):
+        """미션 내용은 비밀이라 프로그램이 뽑지 않는다. 진행표만 만들어 준다."""
+        count = self.mission_count()
+        penalty = self.mission_penalty()
+        res.head("비밀 미션 %d개  (실패 1개당 유카 +%d)" % (count, penalty))
+        for color in self._colors():
+            res.item("%s  :  미션 %d개 — 결과 미정" % (color, count), color=color)
+        res.note("미션 내용은 각자만 압니다. 종료 후 공개해서 대조하세요.")
+        res.note("실패 개수별 유카 : " + "  ·  ".join(
+            "%d개 → +%d" % (n, n * penalty) for n in range(count + 1)))
 
     def _follow_must_char(self, res):
         self._pick_characters(
@@ -316,10 +340,19 @@ class Roller:
         return self._range("dice_min", "dice_max", 1, 100)
 
     def altitude_range(self):
-        return self._range("altitude_min", "altitude_max", 0, 15)
+        return self._range("altitude_min", "altitude_max", 10, 20)
 
     def altitude_extra_range(self):
-        return self._range("altitude2_min", "altitude2_max", 0, 5)
+        """추가 추첨 범위. 영상에서 확인 안 된 값이라 비어 있을 수 있다."""
+        lo = self.cfg.get("altitude2_min")
+        hi = self.cfg.get("altitude2_max")
+        if lo is None or hi is None:
+            return None
+        try:
+            lo, hi = int(lo), int(hi)
+        except (TypeError, ValueError):
+            return None
+        return (hi, lo) if lo > hi else (lo, hi)
 
     def tier_range(self):
         return self._range("tier_min", "tier_max", 0, 4)
@@ -436,7 +469,19 @@ class Roller:
         res.note("위 상위들만 써서 클리어하면 됩니다.")
 
     def _follow_gangwon(self, res):
-        self.roll_gangwon(res)
+        """플레이어마다 미션을 하나씩."""
+        table = self._gangwon_table()
+        res.head("플레이어별 미션")
+        if not table:
+            res.warn("강원랜디 확률표가 비어 있어요 → [설정] 탭에서 등록해 주세요.")
+            return
+        for color in self._colors():
+            picked, pct, extra = self._pick_gangwon(table)
+            text = "%s  :  %s   ( %.2f%% )" % (color, picked["name"], pct)
+            if extra is not None:
+                text += "   →  %d" % extra
+            res.item(text, color=color)
+        res.note("확률표는 영상 근거를 확인하지 못한 커스텀 값입니다.")
 
     # -------------------------------------------------------------- 강원랜디
     def _gangwon_table(self):

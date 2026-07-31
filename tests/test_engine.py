@@ -14,13 +14,30 @@ from ropr.config import default_config     # noqa: E402
 from ropr.engine import Roller, weighted_pick  # noqa: E402
 
 
-def make_roller(seed=0, **overrides):
+def make_roller(seed=0, all_on=True, **overrides):
     cfg = default_config()
+    if all_on:                      # 미확인 룰은 기본으로 꺼져 있다
+        for content in cfg["contents"]:
+            content["enabled"] = True
     cfg.update(overrides)
     return Roller(cfg, random.Random(seed))
 
 
 class TestMain(unittest.TestCase):
+    def test_기본으로는_미확인_룰이_꺼져있다(self):
+        cfg = default_config()
+        off = {c["id"] for c in cfg["contents"] if not c["enabled"]}
+        expected = {c["id"] for c in data.CONTENTS if c["status"] == "unverified"}
+        self.assertEqual(off, expected)
+        self.assertTrue(off, "미확인 룰이 하나는 있어야 한다")
+
+    def test_모든_룰에_검증_상태가_붙어있다(self):
+        for content in data.CONTENTS:
+            self.assertIn(content["status"], data.STATUS_LABEL, content["name"])
+            if content["status"] != "unverified":
+                self.assertTrue(content["desc"].strip(), content["name"])
+            self.assertTrue(content.get("source"), content["name"])
+
     def test_모든_컨텐츠가_에러없이_뽑힌다(self):
         roller = make_roller(
             legend_chars=["전설%d" % i for i in range(12)],
@@ -80,46 +97,63 @@ class TestFollowUps(unittest.TestCase):
         order = re.findall(r"\d위 (\S+)", order_line)
         self.assertEqual(order, sorted(rolls, key=lambda c: rolls[c], reverse=True))
 
-    def test_인생의고도는_기본값없이_0에서15(self):
+    def test_인생의고도_본추첨은_10에서20(self):
         roller = make_roller(7)
-        for _ in range(30):
+        seen = set()
+        for _ in range(60):
             result = self._find(roller, "altitude")
             values = [l for l in result.lines if l.color]
             self.assertEqual(len(values), 4)
             for line in values:
-                self.assertNotIn("+", line.text, "기본 10 더하기는 없어야 한다")
-                self.assertTrue(0 <= int(line.text.split(":")[1].strip()) <= 15)
+                value = int(line.text.split(":")[1].strip())
+                self.assertTrue(10 <= value <= 20, line.text)
+                seen.add(value)
+        self.assertEqual(seen, set(range(10, 21)), "10~20 이 다 나와야 한다")
 
-    def test_한번더는_0에서5(self):
+    def test_추가추첨_범위가_미확인이면_뽑지_않고_경고(self):
         roller = make_roller(7)
+        self.assertIsNone(roller.altitude_extra_range(),
+                          "영상 미확인이라 기본값은 비어 있어야 한다")
+        result = self._find(roller, "altitude")
+        before = len(result.lines)
+        roller.altitude_again(result)
+        added = result.lines[before:]
+        self.assertTrue(added and added[0].kind == "warn", added)
+
+    def test_추가추첨_범위를_정하면_그_안에서_뽑는다(self):
+        roller = make_roller(7, altitude2_min=1, altitude2_max=3)
+        self.assertEqual(roller.altitude_extra_range(), (1, 3))
         for _ in range(30):
             result = self._find(roller, "altitude")
             before = len(result.lines)
             roller.altitude_again(result)
-            added = result.lines[before:]
-            self.assertEqual(added[0].kind, "head")
-            self.assertIn("한 번 더", added[0].text)
-            values = [l for l in added if l.color]
-            self.assertEqual(len(values), 4)
-            for line in values:
-                self.assertTrue(0 <= int(line.text.split(":")[1].strip()) <= 5)
+            picked = [l for l in result.lines[before:] if l.text.startswith("▶")]
+            self.assertEqual(len(picked), 1)
+            self.assertIn(int(picked[0].text.replace("▶", "").strip()), (1, 2, 3))
 
-    def test_플레이어별_끄면_숫자_하나만(self):
-        roller = make_roller(7, altitude_per_player=False)
-        result = self._find(roller, "altitude")
-        self.assertEqual([l for l in result.lines if l.color], [])
-        picks = [l for l in result.lines if l.text.startswith("▶")]
-        self.assertEqual(len(picks), 1)
-        self.assertTrue(0 <= int(picks[0].text.replace("▶", "").strip()) <= 15)
-
-    def test_너의상위는_0에서4(self):
+    def test_너의상위는_1에서5_뽑고_5는_0상위(self):
         roller = make_roller(11)
-        for _ in range(30):
+        seen_raw = set()
+        for _ in range(60):
             result = self._find(roller, "your_tier")
-            values = [int(l.text.split(":")[1]) for l in result.lines if l.color]
-            self.assertEqual(len(values), 4)
-            for value in values:
-                self.assertTrue(0 <= value <= 4)
+            lines = [l for l in result.lines if l.color]
+            self.assertEqual(len(lines), 4)
+            for line in lines:
+                raw = int(re.search(r":\s*(\d+)\s*→", line.text).group(1))
+                applied = int(re.search(r"상위\s*(\d+)", line.text).group(1))
+                self.assertTrue(1 <= raw <= 5, line.text)
+                self.assertEqual(applied, 0 if raw == 5 else raw, line.text)
+                seen_raw.add(raw)
+        self.assertEqual(seen_raw, {1, 2, 3, 4, 5}, "눈금 1~5 가 다 나와야 한다")
+
+    def test_상위_눈금은_다섯가지가_고르게_나온다(self):
+        roller = make_roller(0)
+        counts = {}
+        for _ in range(4000):
+            raw = roller.rng.randint(*roller.tier_range())
+            counts[raw] = counts.get(raw, 0) + 1
+        for raw in range(1, 6):
+            self.assertAlmostEqual(counts[raw] / 4000, 0.2, delta=0.03)
 
     def test_이캐필_이캐금_개수(self):
         roller = make_roller(
@@ -151,30 +185,56 @@ class TestFollowUps(unittest.TestCase):
         self.assertIn("히든 1개", items[1].text)
 
 
-    def test_내가제일운없어(self):
-        roller = make_roller(23)
+    def test_필수랜덤유닛은_4명에게_중복없이_배정된다(self):
+        roller = make_roller(31)
+        pool = set(roller.cfg["random_unit_chars"])
         for _ in range(40):
-            result = self._find(roller, "unlucky")
-            tokens = {}
-            for line in result.lines:
-                if line.color:
-                    tokens[line.color] = int(line.text.split(":")[1].replace("개", ""))
-            self.assertEqual(set(tokens), set(data.COLORS))
-            for value in tokens.values():
-                self.assertTrue(0 <= value <= 10)
+            result = self._find(roller, "required_random_unit")
+            self.assertFalse([l for l in result.lines if l.kind == "warn"])
+            units = [l.text.split(":", 1)[1].strip()
+                     for l in result.lines if l.color]
+            self.assertEqual(len(units), 4)
+            self.assertEqual(len(set(units)), 4, units)
+            for unit in units:
+                self.assertIn(unit, pool)
 
-            verdict = [l.text for l in result.lines if l.text.startswith("▶")][0]
-            fewest = min(tokens.values())
-            self.assertIn("토큰 %d개" % fewest, verdict)
-            for color, value in tokens.items():
-                self.assertEqual(color in verdict, value == fewest, (color, verdict))
+    def test_개인미션_실패당_유카가_설정을_따른다(self):
+        roller = make_roller(33)
+        result = self._find(roller, "personal_mission")
+        text = result.plain
+        self.assertIn("실패 1개당 유카 +10", text)
+        self.assertIn("3개 → +30", text)
 
-    def test_행운의토큰_범위는_설정을_따른다(self):
-        roller = make_roller(29, unlucky_min=2, unlucky_max=3)
-        result = self._find(roller, "unlucky")
-        for line in result.lines:
-            if line.color:
-                self.assertIn(int(line.text.split(":")[1].replace("개", "")), (2, 3))
+        roller = make_roller(33, mission_penalty=15)
+        result = self._find(roller, "personal_mission")
+        self.assertIn("3개 → +45", result.plain)
+
+    def test_강원랜디는_플레이어별로_뽑는다(self):
+        roller = make_roller(35)
+        table = {r["name"] for r in data.GANGWON_TABLE}
+        for _ in range(40):
+            result = self._find(roller, "gangwon")
+            picks = [l for l in result.lines if l.color]
+            self.assertEqual([l.color for l in picks], data.COLORS)
+            for line in picks:
+                name = line.text.split(":", 1)[1].rsplit("(", 1)[0].strip()
+                self.assertIn(name, table, line.text)
+
+
+class TestRevealOrder(unittest.TestCase):
+    def test_공개_순서는_빨강_보라_파랑_노랑(self):
+        self.assertEqual(data.COLORS, ["빨강", "보라", "파랑", "노랑"])
+
+    def test_색깔이_붙는_결과는_전부_그_순서를_따른다(self):
+        roller = make_roller(0)
+        for cid in ("altitude", "your_tier", "gangwon", "required_random_unit"):
+            name = next(c["name"] for c in data.CONTENTS if c["id"] == cid)
+            for _ in range(6000):
+                result = roller.draw_main()
+                if result.title == name:
+                    break
+            order = [l.color for l in result.lines if l.color]
+            self.assertEqual(order, data.COLORS, cid)
 
 
 class TestNyehyung(unittest.TestCase):

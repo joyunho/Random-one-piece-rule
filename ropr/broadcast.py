@@ -9,6 +9,7 @@ OBS 로 캡처할 별도 창. 운영자 창에서 뽑은 결과만 크게 보여
   - 크로마키(초록) 배경으로 바꿔서 OBS 에서 배경만 빼는 것도 가능
 """
 
+import re
 import tkinter as tk
 
 from .data import COLOR_HEX
@@ -37,6 +38,15 @@ BRIGHT = {
 
 def bright(color):
     return BRIGHT.get(color, COLOR_HEX.get(color, TEXT))
+
+
+# 강원랜디는 운영자 창에서 "강제상위 (5.85%)" 처럼 확률을 같이 보여 준다.
+# 방송 화면에서는 확률이 필요 없고 자리만 차지해서 뺀다.
+_PERCENT = re.compile(r"\s*\(\s*\d+(?:\.\d+)?\s*%\s*\)")
+
+
+def strip_percent(text):
+    return _PERCENT.sub("", text).strip()
 
 
 class BroadcastWindow(tk.Toplevel):
@@ -74,6 +84,8 @@ class BroadcastWindow(tk.Toplevel):
                                    font=(self.base, 15), wraplength=1120,
                                    justify="center")
         self.desc_label.pack(pady=(8, 0))
+        # 창 크기를 바꿔도 설명이 양옆으로 잘리지 않게
+        self._wrap_to_card(head, self.desc_label, pad=120)
 
         # 가운데 : 결과
         self.body = tk.Frame(self.root_frame, bg=BG_DARK)
@@ -156,6 +168,24 @@ class BroadcastWindow(tk.Toplevel):
         self.stage.configure(
             text=("공개 %d / %d" % (done, total)) if total else "")
 
+    @staticmethod
+    def _wrap_to_card(card, label, pad=32):
+        """카드가 실제로 배치/리사이즈될 때마다 글자 줄바꿈 폭을 맞춘다."""
+        last = [None]
+
+        def on_configure(event):
+            # 줄바꿈 폭을 바꾸면 카드 크기가 또 변할 수 있어서 <Configure> 가
+            # 다시 들어온다. 폭이 진짜 달라졌을 때만 손대서 되돌이를 막는다.
+            if last[0] == event.width:
+                return
+            last[0] = event.width
+            try:
+                label.configure(wraplength=max(120, event.width - pad))
+            except tk.TclError:      # 이미 지워진 카드
+                pass
+        # add="+" : 한 프레임에 여러 줄을 매달 때 앞의 것이 지워지지 않게
+        card.bind("<Configure>", on_configure, add="+")
+
     def _draw_players(self, colored, result):
         """색깔별 결과는 크기가 똑같은 카드 네 장으로."""
         wrap = tk.Frame(self.body, bg=self._bg())
@@ -164,14 +194,18 @@ class BroadcastWindow(tk.Toplevel):
         values = []
         for line in colored:
             text = line.text.split(":", 1)[1].strip() if ":" in line.text else line.text
-            values.append(text)
+            values.append(strip_percent(text))
 
         # 글자 크기는 카드마다 따로 정하지 않고, 제일 긴 값 하나에 맞춰 통일한다
         longest = max((len(v) for v in values), default=1)
         size = 64 if longest <= 4 else (40 if longest <= 10 else
                                         (28 if longest <= 18 else 20))
-        width = max(9, min(22, longest + 3))
 
+        # 카드 폭에 맞춰 글자를 줄바꿈한다.
+        # width 를 글자 수로 주면 폰트 크기와 안 맞아서 양옆이 잘리고,
+        # 여기서 update_idletasks() 를 부르면 그리는 도중에 render() 가 다시
+        # 들어와 방금 만든 프레임이 지워진다. 그래서 카드가 실제로 배치될 때
+        # <Configure> 로 알려 주는 픽셀 폭을 쓴다.
         for col, (line, value) in enumerate(zip(colored, values)):
             wrap.grid_columnconfigure(col, weight=1, uniform="cast")
             card = tk.Frame(wrap, bg=CARD, highlightthickness=3,
@@ -180,9 +214,11 @@ class BroadcastWindow(tk.Toplevel):
 
             tk.Label(card, text=line.color, bg=CARD, fg=bright(line.color),
                      font=(self.base, 26, "bold")).pack(pady=(22, 6))
-            tk.Label(card, text=value, bg=CARD, fg=TEXT, width=width,
-                     font=(self.base, size, "bold"), wraplength=380).pack(
-                         expand=True, pady=(0, 24), padx=10)
+            value_label = tk.Label(card, text=value, bg=CARD, fg=TEXT,
+                                   font=(self.base, size, "bold"),
+                                   justify="center")
+            value_label.pack(expand=True, fill="x", pady=(0, 24), padx=12)
+            self._wrap_to_card(card, value_label)
         wrap.grid_rowconfigure(0, weight=1)
 
         # 색깔 카드 외의 굵은 결론(순서·판정 등)이 있으면 아래에 한 줄
@@ -196,22 +232,26 @@ class BroadcastWindow(tk.Toplevel):
     def _draw_lines(self, result):
         """색깔이 없는 결과는 큰 글씨 목록으로."""
         wrap = tk.Frame(self.body, bg=self._bg())
-        wrap.pack(expand=True)
+        wrap.pack(expand=True, fill="both")
 
         for line in result.lines:
             if line.kind == "head":
                 tk.Label(wrap, text=line.text, bg=self._bg(), fg=DIM,
                          font=(self.base, 16, "bold")).pack(pady=(18, 2))
             elif line.kind == "warn":
-                tk.Label(wrap, text=line.text, bg=self._bg(), fg=HOT,
-                         font=(self.base, 18, "bold"), wraplength=1100).pack(pady=4)
+                label = tk.Label(wrap, text=line.text, bg=self._bg(), fg=HOT,
+                                 font=(self.base, 18, "bold"), wraplength=1100)
+                label.pack(pady=4)
+                self._wrap_to_card(wrap, label, pad=40)
             elif line.kind == "item":
                 text = line.text.replace("▶", "").strip()
                 big = line.text.startswith("▶")
-                tk.Label(wrap, text=text, bg=self._bg(),
-                         fg=GOLD if big else TEXT,
-                         font=(self.base, 44 if big else 22, "bold"),
-                         wraplength=1140).pack(pady=(4, 2))
+                label = tk.Label(wrap, text=text, bg=self._bg(),
+                                 fg=GOLD if big else TEXT,
+                                 font=(self.base, 44 if big else 22, "bold"),
+                                 wraplength=1140)
+                label.pack(pady=(4, 2))
+                self._wrap_to_card(wrap, label, pad=40)
 
     # ------------------------------------------------------------------ 연출
     def flash(self):

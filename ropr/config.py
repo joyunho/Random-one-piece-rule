@@ -81,21 +81,22 @@ def default_config():
         "dice_min": 1,
         "dice_max": 100,
 
-        # 인생의고도전 : 0~15 를 뽑고, [한 번 더] 를 누르면 0~5 를 한 번 더
-        "altitude_base": 0,          # 0 이면 '기본값 더하기' 없이 숫자만 나온다
-        "altitude_min": 0,
-        "altitude_max": 15,
-        "altitude2_min": 0,
-        "altitude2_max": 5,
-        "altitude_per_player": True,  # 끄면 다같이 쓰는 숫자 하나만 뽑는다
+        # 인생의고도전 (2026-07-16 확인본) : 플레이어별 10~20
+        "altitude_min": 10,
+        "altitude_max": 20,
+        # 추가 추첨 범위는 영상에서 확인되지 않았다.
+        # None 이면 임의로 채우지 않고 "범위 지정 필요" 로 막는다.
+        "altitude2_min": None,
+        "altitude2_max": None,
 
-        # 너의상위는 : 플레이어별로 0~4
-        "tier_min": 0,
-        "tier_max": 4,
+        # 너의상위는 : 1~5 를 뽑고 5 는 0상위
+        "tier_min": 1,
+        "tier_max": 5,
+        "tier_zero_roll": 5,      # 이 눈금이 나오면 상위 0
 
-        # 내가 제일 운 없어 : 플레이어별 행운의 토큰 개수
-        "unlucky_min": 0,
-        "unlucky_max": 10,
+        # 개인미션전 : 미션 개수와 실패 1개당 유카 (2026-07-23 확인본 = 10)
+        "mission_count": 3,
+        "mission_penalty": 10,
 
         # 이캐릭들필수에요 / 이캐릭들금지에요
         "must_legend": 4,
@@ -114,7 +115,7 @@ def default_config():
 
         "contents": [
             {"id": c["id"], "name": c["name"], "desc": c.get("desc", ""),
-             "enabled": True, "weight": 1.0}
+             "enabled": not data.is_off_by_default(c), "weight": 1.0}
             for c in data.CONTENTS
         ],
         "gangwon": copy.deepcopy(data.GANGWON_TABLE),
@@ -123,6 +124,8 @@ def default_config():
         #   - 등급을 뜻하는 글자(초월/불멸/…)는 뽑기 후보에서 빼야 의미가 있다.
         "nyehyung_count": 2,
         "nyehyung_strip_words": ["초월", "불멸", "영원", "제한", "신비"],
+
+        "random_unit_chars": list(roster.DEFAULT_RANDOM_UNITS),
 
         "legend_chars": list(roster.DEFAULT_LEGEND),
         "hidden_chars": list(roster.DEFAULT_HIDDEN),
@@ -185,6 +188,7 @@ def _merge(loaded):
         "legend_chars": roster.DEFAULT_LEGEND,
         "hidden_chars": roster.DEFAULT_HIDDEN,
         "upper_chars": roster.DEFAULT_UPPER,
+        "random_unit_chars": roster.DEFAULT_RANDOM_UNITS,
     }
     for key, fallback in defaults.items():
         cfg[key] = clean_names(cfg.get(key)) or list(fallback)
