@@ -59,8 +59,13 @@ class SpinPanel(tk.Frame):
 
     # ---------------------------------------------------------------- 연출
     def spin(self, key, label, frames, final, button=None, once=False,
-             fg=None, badge=None, badge_unit=None, on_done=None, end_sound=None):
-        """label 의 글자를 frames 안에서 촤르륵 바꾸다가 final 에서 멈춘다."""
+             fg=None, badge=None, badge_unit=None, on_done=None, end_sound=None,
+             cast=None):
+        """label 의 글자를 frames 안에서 촤르륵 바꾸다가 final 에서 멈춘다.
+
+        cast 를 주면 방송 창의 같은 이름 칸도 프레임마다 같이 돌아간다.
+        (예: cast="빨강" 이면 방송 창의 빨강 카드)
+        """
         if key in self._busy:
             return
         self._busy.add(key)
@@ -76,12 +81,17 @@ class SpinPanel(tk.Frame):
                 self._busy.discard(key)
                 if button is not None and not once:
                     button.configure(state="normal")   # once=True 면 한 번만 눌린다
+                if cast:
+                    self.app.cast_live(cast, str(final), False)
                 (end_sound or sound.settle)()
                 if on_done:
                     on_done()
                 self.app.refresh_panel_history()
                 return
-            label.configure(text=str(random.choice(frames)), fg=MUTED)
+            text = str(random.choice(frames))
+            label.configure(text=text, fg=MUTED)
+            if cast:
+                self.app.cast_live(cast, text, True)
             if badge is not None:
                 badge.show(None, spinning=True)
             if n % 2 == 0:
@@ -249,7 +259,7 @@ class AltitudePanel(SpinPanel):
                 row["extra_btn"].configure(state="normal")
 
         self.spin("base:" + color, row["total"], list(range(self.lo, self.hi + 1)),
-                  value, button=row["base_btn"], once=True,
+                  value, cast=color, button=row["base_btn"], once=True,
                   fg=COLOR_HEX.get(color, ACCENT), on_done=done)
 
     def roll_extra(self, color):
@@ -266,7 +276,7 @@ class AltitudePanel(SpinPanel):
             row["extra"] = value
             self._redraw(color)
 
-        self.spin("extra:" + color, row["total"], frames, "+%d" % value,
+        self.spin("extra:" + color, row["total"], frames, "+%d" % value, cast=color,
                   button=row["extra_btn"], once=True, fg=GOLD, on_done=done)
 
     def summary(self):
@@ -284,7 +294,7 @@ class AltitudePanel(SpinPanel):
                             row["base"] + row["extra"]), color=color)
         if self.eligible:
             res.head("졸업보상 꼴찌 (추가 추첨 자격)")
-            res.item("▶  %s" % self.eligible)
+            res.item("▶  졸업보상 꼴찌 :  %s" % self.eligible)
         if self.extra_span is None:
             res.warn("추가 추첨 범위가 정해지지 않았어요 → [설정] 탭에서 지정해 주세요.")
         return res
@@ -349,7 +359,7 @@ class TierPanel(SpinPanel):
                 600, lambda: self._show_applied(color, raw, applied, zero)))
 
         self.spin("tier:" + color, row["value"], list(range(self.lo, self.hi + 1)),
-                  raw, button=row["btn"], once=True,
+                  raw, cast=color, button=row["btn"], once=True,
                   fg=GOLD if zero else COLOR_HEX.get(color, ACCENT), on_done=done)
 
     def _show_applied(self, color, raw, applied, zero):
@@ -368,9 +378,6 @@ class TierPanel(SpinPanel):
             row = self.rows[color]
             if row["raw"] is None:
                 res.item("%s  :  아직 안 뽑음" % color, color=color)
-            elif row["n"] == 0:
-                res.item("%s  :  %d  →  상위 0  (상위 없음)" % (color, row["raw"]),
-                         color=color)
             else:
                 res.item("%s  :  %d  →  상위 %d" % (color, row["raw"], row["n"]),
                          color=color)
@@ -421,6 +428,7 @@ class Force4Panel(SpinPanel):
             self.unit = unit
 
         self.spin("force4", self.name, self.pool, unit, button=self.btn, once=True,
+                  cast="강제 상위",
                   fg=INK, badge=self.badge, badge_unit=unit, on_done=done)
 
     def summary(self):
@@ -514,7 +522,7 @@ class JitsDicePanel(SpinPanel):
         def done():
             slot["unit"] = unit
 
-        self.spin("unit:" + grade, slot["name"], frames, unit,
+        self.spin("unit:" + grade, slot["name"], frames, unit, cast=grade,
                   button=slot["btn"], once=True, fg=INK, badge=slot["badge"],
                   badge_unit=unit, on_done=done)
 
@@ -528,6 +536,7 @@ class JitsDicePanel(SpinPanel):
             self._show_order()
 
         self.spin("dice:" + color, cell["value"], list(range(lo, hi + 1)), value,
+                  cast=color,
                   button=cell["btn"], once=True,
                   fg=COLOR_HEX.get(color, ACCENT), on_done=done)
 
@@ -572,6 +581,13 @@ class CharPickPanel(SpinPanel):
     head_text = ""
     summary_head = ""
     spec_keys = ()      # ((표시이름, 설정키, 개수설정키, 기본개수), ...)
+
+    def _slot_title(self, key):
+        """설정키('legend_chars') -> 화면에 쓰는 이름('전설'). 방송 릴 이름표용."""
+        for title, spec_key, _count in self.specs:
+            if spec_key == key:
+                return title
+        return key
 
     def build(self):
         roller = self.app.roller
@@ -630,6 +646,7 @@ class CharPickPanel(SpinPanel):
 
         # once=True : 한 번 뽑은 칸은 잠긴다 (원하는 이름 나올 때까지 다시 못 뽑음)
         self.spin("%s:%d" % (key, index), slot["name"], frames, picked,
+                  cast="%s %d" % (self._slot_title(key), index + 1),
                   button=slot["btn"], once=True, fg=INK, on_done=done)
 
     def roll(self, key, index):
@@ -747,6 +764,7 @@ class NyehyungPanel(SpinPanel):
             self._refresh_matched()
 
         self.spin("letter:%d" % index, cell["value"], self.letters_pool, letter,
+                  cast="%d번째 글자" % (index + 1),
                   button=cell["btn"], once=True, fg=ACCENT, on_done=done)
 
     def _matched(self):
@@ -780,90 +798,6 @@ class NyehyungPanel(SpinPanel):
         return res
 
 
-# ------------------------------------------------------- 필수!랜덤유닛획득
-class RandomUnitPanel(SpinPanel):
-    title = "필수!랜덤유닛획득"
-
-    def build(self):
-        roller = self.app.roller
-        self.colors = roller._colors()
-        self.pool = roller.random_unit_pool()
-        self.rows = {}
-        self.assigned = None      # 버튼을 처음 누를 때 4명분을 한 번에 확정
-
-        self.heading("색깔별로 눌러서 필수 유닛을 확인하세요")
-        grid = tk.Frame(self, bg=PANEL)
-        grid.pack(anchor="w", padx=18, pady=(4, 0))
-
-        for col, color in enumerate(self.colors):
-            tone = COLOR_HEX.get(color, INK)
-            card = tk.Frame(grid, bg=PANEL, highlightthickness=1,
-                            highlightbackground=LINE)
-            card.grid(row=0, column=col, padx=6, pady=4, sticky="n")
-            tk.Label(card, text=color, bg=PANEL, fg=tone,
-                     font=(self.base, 12, "bold")).pack(pady=(8, 4))
-            badge = images.Badge(card, size=48, bg=PANEL)
-            badge.pack()
-            name = tk.Label(card, text="–", bg=SOFT, fg=MUTED, width=17,
-                            font=(self.base, 11, "bold"), wraplength=160,
-                            highlightthickness=1, highlightbackground=LINE, pady=4)
-            name.pack(padx=10, pady=(6, 0))
-            btn = ttk.Button(card, text="확인", style="Slot.TButton",
-                             command=lambda c=color: self.reveal(c))
-            btn.pack(fill="x", padx=10, pady=(6, 10))
-            if not self.pool:
-                btn.configure(state="disabled")
-                name.configure(text="(목록 비어 있음)")
-            self.rows[color] = {"badge": badge, "name": name, "btn": btn,
-                                "unit": None}
-
-        if not self.pool:
-            tk.Label(self, text="랜덤유닛 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.",
-                     bg=PANEL, fg="#b91c1c",
-                     font=(self.base, 11, "bold")).pack(anchor="w", padx=18, pady=8)
-            return
-        self.hint("배정은 처음 누를 때 4명분이 한 번에 정해집니다. 중복은 나오지 않습니다.")
-
-    def _ensure_assigned(self):
-        if self.assigned is not None:
-            return
-        take = min(len(self.colors), len(self.pool))
-        picked = self.app.roller.rng.sample(self.pool, take)
-        self.assigned = {c: (picked[i] if i < len(picked) else None)
-                         for i, c in enumerate(self.colors)}
-
-    def reveal(self, color):
-        row = self.rows[color]
-        if row["unit"] is not None:
-            return
-        self._ensure_assigned()
-        unit = self.assigned.get(color)
-        if unit is None:
-            row["name"].configure(text="(유닛이 모자람)", fg=MUTED)
-            sound.thud()
-            return
-
-        def done():
-            row["unit"] = unit
-
-        self.spin("unit:" + color, row["name"], self.pool, unit,
-                  button=row["btn"], once=True, fg=INK, badge=row["badge"],
-                  badge_unit=unit, on_done=done)
-
-    def summary(self):
-        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
-        res.head("플레이어별 필수 유닛")
-        if not self.pool:
-            res.warn("랜덤유닛 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
-            return res
-        for color in self.colors:
-            unit = self.rows[color]["unit"]
-            res.item("%s  :  %s" % (color, unit or "아직 안 뽑음"), color=color)
-        res.note("배정받은 유닛은 반드시 만들어야 합니다. 이후 상위 재료로 소비해도 인정됩니다.")
-        return res
-
-
-# ------------------------------------------------------------------ 개인미션전
 class PersonalMissionPanel(SpinPanel):
     """미션 내용은 비밀이라 뽑지 않는다. 성공/실패 체크와 유카 계산만 해준다."""
 
@@ -931,7 +865,7 @@ class PersonalMissionPanel(SpinPanel):
             res.item("%s  :  실패 %d개  →  유카 +%d"
                      % (color, failed, failed * self.penalty), color=color)
         res.head("팀 합계")
-        res.item("▶  유카 +%d" % team)
+        res.item("▶  팀 합계 유카 +%d" % team)
         res.note("미션 내용은 각자만 압니다. 종료 후 공개해서 대조하세요.")
         return res
 
@@ -944,6 +878,5 @@ PANELS = {
     "must_char": MustCharPanel,
     "ban_char": BanCharPanel,
     "nyehyung": NyehyungPanel,
-    "required_random_unit": RandomUnitPanel,
     "personal_mission": PersonalMissionPanel,
 }

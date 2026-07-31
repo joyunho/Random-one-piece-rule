@@ -112,10 +112,22 @@ class TestFollowUps(unittest.TestCase):
                 seen.add(value)
         self.assertEqual(seen, set(range(10, 21)), "10~20 이 다 나와야 한다")
 
-    def test_추가추첨_범위가_미확인이면_뽑지_않고_경고(self):
+    def test_추가추첨_기본범위는_0에서5(self):
         roller = make_roller(7)
-        self.assertIsNone(roller.altitude_extra_range(),
-                          "영상 미확인이라 기본값은 비어 있어야 한다")
+        self.assertEqual(roller.altitude_extra_range(), (0, 5))
+        seen = set()
+        for _ in range(60):
+            result = self._find(roller, "altitude")
+            before = len(result.lines)
+            roller.altitude_again(result)
+            picked = [l for l in result.lines[before:] if l.text.startswith("▶")]
+            self.assertEqual(len(picked), 1)
+            seen.add(int(picked[0].text.replace("▶", "").strip()))
+        self.assertEqual(seen, set(range(0, 6)), "0~5 가 다 나와야 한다")
+
+    def test_추가추첨_범위를_비우면_뽑지_않고_경고(self):
+        roller = make_roller(7, altitude2_min=None, altitude2_max=None)
+        self.assertIsNone(roller.altitude_extra_range())
         result = self._find(roller, "altitude")
         before = len(result.lines)
         roller.altitude_again(result)
@@ -187,19 +199,6 @@ class TestFollowUps(unittest.TestCase):
         self.assertIn("히든 1개", items[1].text)
 
 
-    def test_필수랜덤유닛은_4명에게_중복없이_배정된다(self):
-        roller = make_roller(31)
-        pool = set(roller.cfg["random_unit_chars"])
-        for _ in range(40):
-            result = self._find(roller, "required_random_unit")
-            self.assertFalse([l for l in result.lines if l.kind == "warn"])
-            units = [l.text.split(":", 1)[1].strip()
-                     for l in result.lines if l.color]
-            self.assertEqual(len(units), 4)
-            self.assertEqual(len(set(units)), 4, units)
-            for unit in units:
-                self.assertIn(unit, pool)
-
     def test_개인미션_실패당_유카가_설정을_따른다(self):
         roller = make_roller(33)
         result = self._find(roller, "personal_mission")
@@ -229,7 +228,7 @@ class TestRevealOrder(unittest.TestCase):
 
     def test_색깔이_붙는_결과는_전부_그_순서를_따른다(self):
         roller = make_roller(0)
-        for cid in ("altitude", "your_tier", "gangwon", "required_random_unit"):
+        for cid in ("altitude", "your_tier", "gangwon"):
             name = next(c["name"] for c in data.CONTENTS if c["id"] == cid)
             for _ in range(6000):
                 result = roller.draw_main()
@@ -481,12 +480,15 @@ class TestConfigMigration(unittest.TestCase):
             self.assertNotIn(key, cfg, key)
         self.assertEqual(cfg["tier_min"], 1)      # 살아있는 값은 그대로
 
-    def test_고도_추가추첨_범위는_비어있으면_None_그대로(self):
+    def test_고도_추가추첨_기본값은_0에서5(self):
         cfg = config_mod._merge({})
+        self.assertEqual((cfg["altitude2_min"], cfg["altitude2_max"]), (0, 5))
+        self.assertEqual(Roller(cfg).altitude_extra_range(), (0, 5))
+
+    def test_고도_추가추첨_범위를_비우면_None_그대로(self):
+        cfg = config_mod._merge({"altitude2_min": None, "altitude2_max": None})
         self.assertIsNone(cfg["altitude2_min"])
-        self.assertIsNone(cfg["altitude2_max"])
-        roller = Roller(cfg)
-        self.assertIsNone(roller.altitude_extra_range())
+        self.assertIsNone(Roller(cfg).altitude_extra_range())
 
     def test_범위를_채우면_추가추첨이_열린다(self):
         cfg = config_mod._merge({"altitude2_min": 0, "altitude2_max": 5})

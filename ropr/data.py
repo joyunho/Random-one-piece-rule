@@ -94,7 +94,7 @@ CONTENTS = [
         "id": "altitude", "name": "인생의고도전", "follow": "altitude",
         "status": "partial",
         "desc": "플레이어마다 10~20 중 하나를 뽑고, 그 숫자만큼 고도를 갑니다.\n"
-                "졸업보상을 가장 늦게 받은 1명만 추가 추첨을 한 번 더 합니다.",
+                "졸업보상을 가장 늦게 받은 1명만 0~5 를 한 번 더 뽑아서 더합니다.",
         "source": "https://www.youtube.com/watch?v=j4shAeicaX0",
     },
     {
@@ -124,14 +124,6 @@ CONTENTS = [
         "desc": "팀 공통으로 전설 7명 · 히든 7명을 뽑습니다. 이 캐릭터는 갈 수 없습니다.\n"
                 "일단 만든 뒤 상위 조합 재료로 소비하는 우회도 금지입니다.",
         "source": "https://www.youtube.com/watch?v=XdV6tw9Vpuk",
-    },
-    {
-        "id": "required_random_unit", "name": "필수!랜덤유닛획득",
-        "follow": "required_random_unit", "status": "verified",
-        "desc": "플레이어마다 랜덤/콜라보 유닛을 하나씩 배정받고, 그 유닛을 반드시 "
-                "만들어야 합니다.\n"
-                "이후 상위 재료로 소비해도 인정되고, 그 외 상위 선택은 자유입니다.",
-        "source": "https://www.youtube.com/watch?v=or3EkIQFIag",
     },
     {
         "id": "gangwon", "name": "강원랜디", "follow": "gangwon",

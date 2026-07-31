@@ -223,6 +223,23 @@ class App(tk.Tk):
         if flash:
             self.cast.flash()
 
+    def _sound_test(self):
+        """소리가 안 난다고 할 때 원인을 바로 보여준다."""
+        self.sound_msg.configure(text=sound.self_test(),
+                                 fg=ACCENT if sound.last_error else MUTED)
+
+    def cast_live(self, slot, text, spinning):
+        """스핀 한 프레임마다 방송 창도 같이 돌린다.
+
+        화면을 다시 그리지 않고 글자만 바꾸기 때문에 초당 수십 번 불러도 된다.
+        """
+        if self.cast is None or not self.cast.winfo_exists():
+            return
+        try:
+            self.cast.live(slot, text, spinning)
+        except tk.TclError:      # 방송 창을 닫는 중이면 조용히 넘어간다
+            pass
+
     # ---------------------------------------------------------- 탭 1 메인 뽑기
     def _build_main_tab(self):
         tab = ttk.Frame(self.nb, style="Card.TFrame")
@@ -575,7 +592,6 @@ class App(tk.Tk):
             ("hidden_chars", "히든", "이캐릭들필수/금지에 쓰입니다."),
             ("upper_chars", "상위",
              "녜힁제조기 · 4인 강제전 · 지츠다이스룰.  이름 (등급) 형식."),
-            ("random_unit_chars", "랜덤/콜라보", "필수!랜덤유닛획득에 쓰입니다."),
         )
         for key, title, hint in specs:
             col = tk.Frame(body, bg=PANEL)
@@ -729,6 +745,19 @@ class App(tk.Tk):
                              "설정·파일 경로는 방송 창에 나오지 않습니다.",
                  bg=PANEL, fg=MUTED, font=(self.base, 9)).pack(anchor="w", padx=24,
                                                                pady=(6, 0))
+
+        # ---- 효과음
+        section("효과음")
+        snd_row = tk.Frame(inner, bg=PANEL)
+        snd_row.pack(fill="x", padx=24)
+        ttk.Button(snd_row, text="소리 테스트",
+                   command=self._sound_test).pack(side="left")
+        self.sound_msg = tk.Label(snd_row, text="", bg=PANEL, fg=MUTED,
+                                  font=(self.base, 9), justify="left",
+                                  wraplength=760, anchor="w")
+        self.sound_msg.pack(side="left", padx=(12, 0))
+        if not sound.available():
+            self.sound_msg.configure(text="윈도우에서만 소리가 납니다.")
 
         strip_row = tk.Frame(inner, bg=PANEL)
         strip_row.pack(fill="x", padx=24, pady=(10, 0))

@@ -84,10 +84,10 @@ def default_config():
         # 인생의고도전 (2026-07-16 확인본) : 플레이어별 10~20
         "altitude_min": 10,
         "altitude_max": 20,
-        # 추가 추첨 범위는 영상에서 확인되지 않았다.
-        # None 이면 임의로 채우지 않고 "범위 지정 필요" 로 막는다.
-        "altitude2_min": None,
-        "altitude2_max": None,
+        # 추가 추첨 ('한 번 더') 범위. 사용자가 알려준 값 = 0~5.
+        # 비워 두면(None) 버튼이 잠긴다.
+        "altitude2_min": 0,
+        "altitude2_max": 5,
 
         # 너의상위는 : 1~5 를 뽑고 5 는 0상위
         "tier_min": 1,
@@ -125,8 +125,6 @@ def default_config():
         "nyehyung_count": 2,
         "nyehyung_strip_words": ["초월", "불멸", "영원", "제한", "신비"],
 
-        "random_unit_chars": list(roster.DEFAULT_RANDOM_UNITS),
-
         "legend_chars": list(roster.DEFAULT_LEGEND),
         "hidden_chars": list(roster.DEFAULT_HIDDEN),
         "upper_chars": list(roster.DEFAULT_UPPER),
@@ -138,6 +136,7 @@ DEAD_KEYS = (
     "unlucky_min", "unlucky_max",       # '내가 제일 운 없어' 삭제
     "altitude_base",                    # 인생의고도 기본더하기 -> 10~20 범위로 흡수
     "altitude_per_player",              # 이제 항상 색깔별로 뽑는다
+    "random_unit_chars",                # 필수!랜덤유닛획득 삭제 (유닛 저격 불가)
 )
 
 
@@ -196,7 +195,6 @@ def _merge(loaded):
         "legend_chars": roster.DEFAULT_LEGEND,
         "hidden_chars": roster.DEFAULT_HIDDEN,
         "upper_chars": roster.DEFAULT_UPPER,
-        "random_unit_chars": roster.DEFAULT_RANDOM_UNITS,
     }
     for key, fallback in defaults.items():
         cfg[key] = clean_names(cfg.get(key)) or list(fallback)

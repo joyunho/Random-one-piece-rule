@@ -144,7 +144,6 @@ class Roller:
             "nyehyung": self._follow_nyehyung,
             "altitude": self._follow_altitude,
             "your_tier": self._follow_your_tier,
-            "required_random_unit": self._follow_random_unit,
             "personal_mission": self._follow_personal_mission,
             "must_char": self._follow_must_char,
             "ban_char": self._follow_ban_char,
@@ -254,35 +253,7 @@ class Roller:
         for color in self._colors():
             raw = self.rng.randint(lo, hi)
             applied = self.applied_tier(raw)
-            if applied == raw:
-                res.item("%s  :  %d  →  상위 %d" % (color, raw, applied), color=color)
-            else:
-                res.item("%s  :  %d  →  상위 %d  (상위 없음)" % (color, raw, applied),
-                         color=color)
-
-    # ------------------------------------------------- 필수!랜덤유닛획득
-    def random_unit_pool(self):
-        return clean_names(self.cfg.get("random_unit_chars"))
-
-    def _follow_random_unit(self, res):
-        """플레이어마다 랜덤/콜라보 유닛을 하나씩. 중복 없이 먼저 확정한다."""
-        colors = self._colors()
-        pool = self.random_unit_pool()
-        res.head("플레이어별 필수 유닛")
-        if not pool:
-            res.warn("랜덤유닛 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
-            return
-        take = min(len(colors), len(pool))
-        picked = self.rng.sample(pool, take)
-        for i, color in enumerate(colors):
-            if i < len(picked):
-                res.item("%s  :  %s" % (color, picked[i]), color=color)
-            else:
-                res.item("%s  :  (유닛이 모자람)" % color, color=color)
-        if take < len(colors):
-            res.warn("랜덤유닛이 %d개뿐이라 %d명은 배정을 못 받았어요."
-                     % (len(pool), len(colors) - take))
-        res.note("배정받은 유닛은 반드시 만들어야 합니다. 이후 상위 재료로 소비해도 인정됩니다.")
+            res.item("%s  :  %d  →  상위 %d" % (color, raw, applied), color=color)
 
     # ------------------------------------------------------------- 개인미션전
     def mission_count(self):
