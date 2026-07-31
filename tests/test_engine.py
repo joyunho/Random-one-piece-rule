@@ -45,12 +45,24 @@ class TestFollowUps(unittest.TestCase):
                 return result
         self.fail("%s 를 뽑지 못했다" % content_id)
 
-    def test_4인강제전은_초불영제_중_하나(self):
+    def test_4인강제전은_상위_한마리를_강제한다(self):
         roller = make_roller(3)
+        uppers = set(roller.cfg["upper_chars"])
         for _ in range(40):
             result = self._find(roller, "force4")
-            picked = result.lines[-1].text.replace("▶", "").strip()
-            self.assertIn(picked, data.GRADES)
+            self.assertFalse([l for l in result.lines if l.kind == "warn"])
+            picked = [l.text for l in result.lines if l.text.startswith("▶")]
+            self.assertEqual(len(picked), 1)
+            unit = picked[0].replace("▶", "").strip()
+            self.assertIn(unit, uppers, "상위 목록에 있는 이름이어야 한다")
+            self.assertTrue([l for l in result.lines
+                             if l.kind == "note" and "4명 모두" in l.text])
+
+    def test_4인강제전_상위목록이_비면_경고(self):
+        roller = make_roller(3, upper_chars=[])
+        result = self._find(roller, "force4")
+        self.assertTrue(any(l.kind == "warn" for l in result.lines))
+        self.assertFalse([l for l in result.lines if l.text.startswith("▶")])
 
     def test_지츠다이스_범위와_순서(self):
         roller = make_roller(5)

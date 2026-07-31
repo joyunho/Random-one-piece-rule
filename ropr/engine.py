@@ -163,10 +163,14 @@ class Roller:
 
     # ------------------------------------------------------------ 추가 뽑기들
     def _follow_force4(self, res):
-        """4인 강제전 → 초 / 불 / 영 / 제 중 하나."""
-        grades = self._grades()
-        res.head("초 · 불 · 영 · 제 중에서 하나 뽑기")
-        res.item("▶  %s" % self.rng.choice(grades))
+        """4인 강제전 → 상위 중에서 한 마리. 4명 다 그 상위로 강제."""
+        res.head("상위 중에서 한 마리 뽑기")
+        unit = self.pick_any_upper()
+        if unit is None:
+            res.warn("상위 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
+            return
+        res.item("▶  %s" % unit)
+        res.note("4명 모두 이 상위로 갑니다.")
 
     def _follow_jits_dice(self, res):
         """지츠 '다이스' 룰.
@@ -333,6 +337,11 @@ class Roller:
 
     def pick_upper(self, grade, exclude=()):
         pool = [n for n in self._upper_names() if grade in n and n not in exclude]
+        return self.rng.choice(pool) if pool else None
+
+    def pick_any_upper(self, exclude=()):
+        """등급 상관없이 상위 전체에서 한 마리."""
+        pool = [n for n in self._upper_names() if n not in exclude]
         return self.rng.choice(pool) if pool else None
 
     def pick_char(self, key, exclude=()):

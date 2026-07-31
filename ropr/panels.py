@@ -2,8 +2,8 @@
 """버튼을 하나씩 눌러서 뽑는 결과 화면들.
 
 메인 뽑기에서 아래 컨텐츠가 나오면 글자만 찍는 대신 이 패널이 뜬다.
-    인생의고도전 / 너의상위는 / 지츠'다이스'룰 / 이캐릭들필수·금지에요 /
-    녜힁제조기 / 내가 제일 운 없어
+    4인 강제전 / 인생의고도전 / 너의상위는 / 지츠'다이스'룰 /
+    이캐릭들필수·금지에요 / 녜힁제조기 / 내가 제일 운 없어
 """
 
 import random
@@ -321,6 +321,64 @@ class TierPanel(SpinPanel):
             n = self.rows[color]["n"]
             res.item("%s  :  %s" % (color, "아직 안 뽑음" if n is None else n),
                      color=color)
+        return res
+
+
+# ----------------------------------------------------------------- 4인 강제전
+class Force4Panel(SpinPanel):
+    title = "4인 강제전"
+
+    def build(self):
+        self.pool = self.app.roller._upper_names()
+        self.unit = None
+
+        self.heading("버튼을 눌러서 강제로 갈 상위를 뽑으세요")
+        row = tk.Frame(self, bg=PANEL)
+        row.pack(anchor="w", padx=18, pady=(4, 0))
+
+        card = tk.Frame(row, bg=PANEL, highlightthickness=1, highlightbackground=LINE)
+        card.grid(row=0, column=0, padx=6, sticky="n")
+
+        self.badge = images.Badge(card, size=72, bg=PANEL)
+        self.badge.pack(pady=(12, 6))
+        self.name = tk.Label(card, text="–", bg=SOFT, fg=MUTED, width=24,
+                             font=(self.base, 14, "bold"), wraplength=230,
+                             highlightthickness=1, highlightbackground=LINE, pady=6)
+        self.name.pack(padx=14)
+        self.btn = ttk.Button(card, text="뽑 기", style="Slot.TButton",
+                              command=self.roll)
+        self.btn.pack(fill="x", padx=14, pady=(8, 12))
+
+        if not self.pool:
+            self.btn.configure(state="disabled")
+            self.name.configure(text="(등록된 상위 없음)")
+            tk.Label(self, text="상위 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.",
+                     bg=PANEL, fg="#b91c1c",
+                     font=(self.base, 11, "bold")).pack(anchor="w", padx=18, pady=8)
+            return
+
+        self.hint("여기 뜬 상위로 4명 모두 강제로 갑니다.")
+
+    def roll(self):
+        unit = self.app.roller.pick_any_upper()
+        if unit is None:
+            return
+
+        def done():
+            self.unit = unit
+
+        self.spin("force4", self.name, self.pool, unit, button=self.btn,
+                  fg=INK, badge=self.badge, badge_unit=unit, on_done=done)
+
+    def summary(self):
+        res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
+        res.head("상위 중에서 한 마리 뽑기")
+        if not self.pool:
+            res.warn("상위 목록이 비어 있어요 → [캐릭터 관리] 탭에서 등록해 주세요.")
+            return res
+        res.item("▶  %s" % (self.unit or "아직 안 뽑음"))
+        if self.unit:
+            res.note("4명 모두 이 상위로 갑니다.")
         return res
 
 
@@ -761,6 +819,7 @@ class UnluckyPanel(SpinPanel):
 
 
 PANELS = {
+    "force4": Force4Panel,
     "altitude": AltitudePanel,
     "your_tier": TierPanel,
     "jits_dice": JitsDicePanel,

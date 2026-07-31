@@ -39,7 +39,7 @@ CONTENTS = [
     },
     {
         "id": "force4", "name": "4인 강제전", "follow": "force4",
-        "desc": "초 · 불 · 영 · 제 중에서 하나를 뽑아, 그 등급으로 진행합니다.",
+        "desc": "상위 중에서 한 마리를 뽑습니다. 4명 모두 그 상위로 강제로 갑니다.",
     },
     {
         "id": "jits_dice", "name": "지츠'다이스'룰", "follow": "jits_dice",
