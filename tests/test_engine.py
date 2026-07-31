@@ -386,6 +386,27 @@ class TestRoster(unittest.TestCase):
                              [l.text for l in result.lines if l.kind == "warn"])
 
 
+class TestAtomicPick(unittest.TestCase):
+    """일괄 추첨은 결과를 먼저 중복 없이 확정해야 한다 (방송 사고 방지)."""
+
+    def test_한번에_여러명_뽑아도_중복이_없다(self):
+        roller = make_roller(0)
+        for _ in range(2000):
+            picked = roller.pick_chars("legend_chars", 7)
+            self.assertEqual(len(picked), 7)
+            self.assertEqual(len(set(picked)), 7, picked)
+
+    def test_이미_뽑힌_이름은_제외된다(self):
+        roller = make_roller(1)
+        first = roller.pick_chars("hidden_chars", 5)
+        second = roller.pick_chars("hidden_chars", 5, exclude=first)
+        self.assertFalse(set(first) & set(second))
+
+    def test_명단보다_많이_요청하면_있는만큼만(self):
+        roller = make_roller(2, legend_chars=["A", "B"])
+        self.assertEqual(sorted(roller.pick_chars("legend_chars", 7)), ["A", "B"])
+
+
 class TestWeightedPick(unittest.TestCase):
     def test_가중치_0은_안뽑힌다(self):
         rng = random.Random(0)

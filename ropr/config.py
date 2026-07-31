@@ -109,6 +109,8 @@ def default_config():
         "animate": True,
         # 효과음 (윈도우에서만 소리가 난다)
         "sound": True,
+        # 방송 출력 창 배경을 크로마키 초록으로
+        "cast_chroma": False,
 
         "contents": [
             {"id": c["id"], "name": c["name"], "desc": c.get("desc", ""),

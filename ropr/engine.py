@@ -348,6 +348,16 @@ class Roller:
         pool = [n for n in clean_names(self.cfg.get(key)) if n not in exclude]
         return self.rng.choice(pool) if pool else None
 
+    def pick_chars(self, key, count, exclude=()):
+        """한 번에 여러 명을 중복 없이 뽑는다.
+
+        하나씩 뽑으면서 화면에 반영하면 애니메이션이 끝나기 전에 다음 뽑기가
+        시작되어 같은 캐릭터가 두 번 나올 수 있다. 그래서 먼저 전부 확정한다.
+        """
+        pool = [n for n in clean_names(self.cfg.get(key)) if n not in exclude]
+        take = min(max(0, count), len(pool))
+        return self.rng.sample(pool, take)
+
     def letter_pool(self):
         """녜힁제조기용 : (글자 -> 상위목록, 원래이름 -> 등급 뺀 이름)"""
         return self._syllable_pool(self._upper_names())

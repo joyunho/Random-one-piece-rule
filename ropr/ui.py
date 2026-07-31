@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import config as config_mod
-from . import data, panels, sound
+from . import broadcast, data, panels, sound
 from .engine import Roller
 from .theme import (ACCENT, ACCENT_DK, BG, GOLD, INK, LINE, MUTED, PANEL, SOFT,
                     pick_font)
@@ -79,6 +79,7 @@ class App(tk.Tk):
         self.panel = None
         self.current_title = ""
         self.config_path = config_mod.config_path()
+        self.cast = None            # 방송 출력 창 (필요할 때 만든다)
 
         sound.set_enabled(bool(self.cfg.get("sound", True)))
         sound.warm_up()
@@ -95,8 +96,16 @@ class App(tk.Tk):
         self._build_notebook()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.bind("<Return>", lambda e: self._spin())
-        self.bind("<space>", lambda e: self._spin())
+        self.bind("<Return>", self._shortcut_spin)
+        self.bind("<space>", self._shortcut_spin)
+
+    def _shortcut_spin(self, event=None):
+        """Enter/Space 단축키. 글자를 입력하는 칸에 있을 때는 무시한다."""
+        widget = self.focus_get()
+        if isinstance(widget, (tk.Text, tk.Entry, ttk.Entry, ttk.Combobox)):
+            return None
+        self._spin()
+        return "break"
 
     # ------------------------------------------------------------------ 뼈대
     def _setup_style(self):
@@ -148,6 +157,10 @@ class App(tk.Tk):
                   background=[("active", "#eed9a8"), ("disabled", "#f4f4f6")],
                   foreground=[("disabled", "#b3b8c2")])
 
+        style.configure("Cast.TButton", font=(base, 11, "bold"), padding=(14, 7),
+                        background="#8e0a1f", foreground="white", borderwidth=0)
+        style.map("Cast.TButton", background=[("active", "#6d0716")])
+
         style.configure("Treeview", font=(base, 10), rowheight=26,
                         background="white", fieldbackground="white", borderwidth=0)
         style.configure("Treeview.Heading", font=(base, 10, "bold"),
@@ -162,6 +175,9 @@ class App(tk.Tk):
         tk.Label(bar, text="메인 컨텐츠 · 등급 · 강원랜디 뽑기", bg=ACCENT,
                  fg="#ffd9dd", font=(self.base, 10)).pack(side="left", pady=(6, 0))
 
+        ttk.Button(bar, text="방송 창 열기", style="Cast.TButton",
+                   command=self.open_cast).pack(side="right", padx=(0, 20), pady=12)
+
     def _build_notebook(self):
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=14, pady=(10, 4))
@@ -175,11 +191,37 @@ class App(tk.Tk):
     def _build_status(self):
         self.status = ttk.Label(
             self, style="Muted.TLabel",
-            text="설정 파일 : %s" % config_mod.config_path())
+            text="준비 완료")
         self.status.pack(side="bottom", fill="x", padx=18, pady=(0, 8))
 
     def _say(self, text):
         self.status.configure(text=text)
+
+    # ------------------------------------------------------------- 방송 출력 창
+    def open_cast(self):
+        if self.cast is None or not self.cast.winfo_exists():
+            self.cast = broadcast.BroadcastWindow(self)
+        self.cast.set_chroma(bool(self.cfg.get("cast_chroma", False)))
+        self.cast.show()
+        self.cast.render()
+        self._say("방송 창을 열었습니다. OBS 에서 이 창을 캡처하세요. (F11 전체화면)")
+
+    def _cast_preset(self, width, height):
+        self.open_cast()
+        self.cast.set_preset(width, height)
+
+    def _cast_chroma(self):
+        self.cfg["cast_chroma"] = bool(self.var_chroma.get())
+        if self.cast is not None and self.cast.winfo_exists():
+            self.cast.set_chroma(self.cfg["cast_chroma"])
+
+    def update_cast(self, flash=False):
+        """뽑을 때마다 방송 창을 따라 갱신한다."""
+        if self.cast is None or not self.cast.winfo_exists():
+            return
+        self.cast.render()
+        if flash:
+            self.cast.flash()
 
     # ---------------------------------------------------------- 탭 1 메인 뽑기
     def _build_main_tab(self):
@@ -352,9 +394,11 @@ class App(tk.Tk):
             return
         self.last_result = self.panel.summary()
         self._rewrite_last_history()
+        self.update_cast(flash=True)
 
     def _record(self, result):
         self.last_result = result
+        self.after_idle(self.update_cast)
         self._history_index = len(self.history)
         self.history.append(self._stamped(result))
         if hasattr(self, "history_text"):
@@ -663,6 +707,25 @@ class App(tk.Tk):
                         text="인생의고도전을 빨/파/보/노 각각 뽑기 (끄면 다같이 쓰는 숫자 하나만)",
                         variable=self.var_per_player).pack(anchor="w", padx=24, pady=(10, 0))
 
+        # ---- 방송 출력 창
+        section("방송 출력 창  (OBS 로 캡처할 별도 창)")
+        cast_row = tk.Frame(inner, bg=PANEL)
+        cast_row.pack(fill="x", padx=24)
+        ttk.Button(cast_row, text="방송 창 열기", style="Go.TButton",
+                   command=self.open_cast).pack(side="left")
+        for label, w, h in broadcast.PRESETS:
+            ttk.Button(cast_row, text=label,
+                       command=lambda w=w, h=h: self._cast_preset(w, h)
+                       ).pack(side="left", padx=(8, 0))
+        self.var_chroma = tk.BooleanVar(value=bool(self.cfg.get("cast_chroma", False)))
+        ttk.Checkbutton(cast_row, text="크로마키 배경(초록)", style="Card.TCheckbutton",
+                        variable=self.var_chroma,
+                        command=self._cast_chroma).pack(side="left", padx=(16, 0))
+        tk.Label(inner, text="방송 창에서 F11 을 누르면 전체화면, Esc 로 해제됩니다. "
+                             "설정·파일 경로는 방송 창에 나오지 않습니다.",
+                 bg=PANEL, fg=MUTED, font=(self.base, 9)).pack(anchor="w", padx=24,
+                                                               pady=(6, 0))
+
         strip_row = tk.Frame(inner, bg=PANEL)
         strip_row.pack(fill="x", padx=24, pady=(10, 0))
         tk.Label(strip_row, text="녜힁제조기 글자 뽑기에서 제외할 단어 (쉼표로 구분)",
@@ -832,6 +895,8 @@ class App(tk.Tk):
             except Exception:
                 pass
         self._sync_toggles()
+        if self.cast is not None and self.cast.winfo_exists():
+            self.cast.destroy()
         try:
             config_mod.save_config(self.cfg)
         except Exception:

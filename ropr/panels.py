@@ -213,8 +213,8 @@ class AltitudePanel(SpinPanel):
             self._redraw(color)
 
         self.spin("base:" + color, row["total"], frames, value,
-                  button=row["base_btn"], fg=COLOR_HEX.get(color, ACCENT),
-                  on_done=done)
+                  button=row["base_btn"], once=True,
+                  fg=COLOR_HEX.get(color, ACCENT), on_done=done)
 
     def roll_extra(self, color):
         row = self.rows[color]
@@ -228,7 +228,7 @@ class AltitudePanel(SpinPanel):
             self._redraw(color)
 
         self.spin("extra:" + color, row["total"], frames, "+%d" % value,
-                  button=row["extra_btn"], fg=GOLD, on_done=done)
+                  button=row["extra_btn"], once=True, fg=GOLD, on_done=done)
 
     def summary(self):
         res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
@@ -310,7 +310,7 @@ class TierPanel(SpinPanel):
             row["mark"].configure(text="★  %d  ★" % value if top else " ")
 
         self.spin("tier:" + color, row["value"], list(range(self.lo, self.hi + 1)),
-                  value, button=row["btn"],
+                  value, button=row["btn"], once=True,
                   fg=GOLD if top else COLOR_HEX.get(color, ACCENT),
                   on_done=done, end_sound=sound.taunt if top else None)
 
@@ -367,7 +367,7 @@ class Force4Panel(SpinPanel):
         def done():
             self.unit = unit
 
-        self.spin("force4", self.name, self.pool, unit, button=self.btn,
+        self.spin("force4", self.name, self.pool, unit, button=self.btn, once=True,
                   fg=INK, badge=self.badge, badge_unit=unit, on_done=done)
 
     def summary(self):
@@ -394,6 +394,7 @@ class JitsDicePanel(SpinPanel):
         self.dice_span = roller.dice_range()
         self.slots = {}
         self.dice = {}
+        self.reserved = {}   # 애니메이션 중에도 같은 상위가 또 뽑히지 않게
 
         self.heading("등급마다 버튼을 눌러서 상위를 한 마리씩 뽑으세요")
         grid = tk.Frame(self, bg=PANEL)
@@ -447,17 +448,21 @@ class JitsDicePanel(SpinPanel):
 
     def roll_unit(self, grade):
         slot = self.slots[grade]
+        if slot["unit"] is not None:
+            return
         taken = [s["unit"] for g, s in self.slots.items() if g != grade and s["unit"]]
+        taken += [u for g, u in self.reserved.items() if g != grade and u]
         unit = self.app.roller.pick_upper(grade, exclude=taken)
         if unit is None:
             unit = self.app.roller.pick_upper(grade) or "(없음)"
         frames = self.by_grade.get(grade) or [unit]
+        self.reserved[grade] = unit
 
         def done():
             slot["unit"] = unit
 
         self.spin("unit:" + grade, slot["name"], frames, unit,
-                  button=slot["btn"], fg=INK, badge=slot["badge"],
+                  button=slot["btn"], once=True, fg=INK, badge=slot["badge"],
                   badge_unit=unit, on_done=done)
 
     def roll_dice(self, color):
@@ -470,7 +475,8 @@ class JitsDicePanel(SpinPanel):
             self._show_order()
 
         self.spin("dice:" + color, cell["value"], list(range(lo, hi + 1)), value,
-                  button=cell["btn"], fg=COLOR_HEX.get(color, ACCENT), on_done=done)
+                  button=cell["btn"], once=True,
+                  fg=COLOR_HEX.get(color, ACCENT), on_done=done)
 
     def _show_order(self):
         rolled = {c: d["n"] for c, d in self.dice.items() if d["n"] is not None}
@@ -519,6 +525,9 @@ class CharPickPanel(SpinPanel):
         self.specs = tuple((title, key, roller._int(count_key, default))
                            for title, key, count_key, default in self.spec_keys)
         self.slots = {}
+        # 버튼을 누른 순간 바로 잡아두는 이름들. 애니메이션이 끝나기 전에
+        # 다음 버튼을 눌러도 같은 캐릭터가 또 뽑히지 않게 한다.
+        self.reserved = {}
 
         self.heading(self.head_text)
         wrap = tk.Frame(self, bg=PANEL)
@@ -553,28 +562,47 @@ class CharPickPanel(SpinPanel):
                        ).pack(fill="x", padx=10, pady=(6, 10))
 
     def _taken(self, key):
-        return [s["value"] for (k, _i), s in self.slots.items()
-                if k == key and s["value"]]
+        """이미 공개된 것 + 방금 눌러서 잡아둔 것."""
+        shown = [s["value"] for (k, _i), s in self.slots.items()
+                 if k == key and s["value"]]
+        return shown + list(self.reserved.get(key, []))
 
-    def roll(self, key, index):
+    def _reveal_slot(self, key, index, picked):
         slot = self.slots[(key, index)]
-        picked = self.app.roller.pick_char(key, exclude=self._taken(key))
-        if picked is None:
-            slot["name"].configure(text="(더 뽑을 캐릭터 없음)", fg=MUTED)
-            sound.thud()
-            return
+        self.reserved.setdefault(key, []).append(picked)
         frames = self.app.roller.cfg.get(key) or [picked]
 
         def done():
             slot["value"] = picked
 
+        # once=True : 한 번 뽑은 칸은 잠긴다 (원하는 이름 나올 때까지 다시 못 뽑음)
         self.spin("%s:%d" % (key, index), slot["name"], frames, picked,
-                  button=slot["btn"], fg=INK, on_done=done)
+                  button=slot["btn"], once=True, fg=INK, on_done=done)
+
+    def roll(self, key, index):
+        slot = self.slots[(key, index)]
+        if slot["value"] is not None:
+            return
+        picked = self.app.roller.pick_char(key, exclude=self._taken(key))
+        if picked is None:
+            slot["name"].configure(text="(더 뽑을 캐릭터 없음)", fg=MUTED)
+            sound.thud()
+            return
+        self._reveal_slot(key, index, picked)
 
     def roll_all(self, key, count):
-        for i in range(count):
-            if self.slots[(key, i)]["value"] is None:
-                self.roll(key, i)
+        """빈 칸을 한꺼번에. 결과를 먼저 중복 없이 확정하고 공개만 애니메이션으로."""
+        empty = [i for i in range(count) if self.slots[(key, i)]["value"] is None]
+        empty = [i for i in empty if "%s:%d" % (key, i) not in self._busy]
+        if not empty:
+            return
+        picked = self.app.roller.pick_chars(key, len(empty),
+                                            exclude=self._taken(key))
+        if not picked:
+            sound.thud()
+            return
+        for index, unit in zip(empty, picked):
+            self._reveal_slot(key, index, unit)
 
     def summary(self):
         res = DrawResult(self.app.current_title, desc=self.content.get("desc", ""))
@@ -613,6 +641,7 @@ class NyehyungPanel(SpinPanel):
         pool, _cores = roller.letter_pool()
         self.letters_pool = sorted(pool)
         self.letters = [None] * self.count
+        self.reserved_letters = []   # 누른 순간 바로 잡아둔다
         self.letter_cells = []
 
         self.heading("상위 이름에 들어있는 글자를 %d개 뽑으세요" % self.count)
@@ -650,19 +679,22 @@ class NyehyungPanel(SpinPanel):
 
     def roll_letter(self, index):
         cell = self.letter_cells[index]
-        used = [l for l in self.letters if l]
+        if self.letters[index] is not None:
+            return
+        used = [l for l in self.letters if l] + list(self.reserved_letters)
         letter = self.app.roller.pick_letter(exclude=used)
         if letter is None:
             cell["value"].configure(text="–", fg=MUTED)
             sound.thud()
             return
+        self.reserved_letters.append(letter)
 
         def done():
             self.letters[index] = letter
             self._refresh_matched()
 
         self.spin("letter:%d" % index, cell["value"], self.letters_pool, letter,
-                  button=cell["btn"], fg=ACCENT, on_done=done)
+                  button=cell["btn"], once=True, fg=ACCENT, on_done=done)
 
     def _matched(self):
         return self.app.roller.matched_uppers([l for l in self.letters if l])
@@ -768,7 +800,7 @@ class UnluckyPanel(SpinPanel):
 
         self.spin("%s:%s" % (key, color), row["value"],
                   list(range(self.lo, self.hi + 1)), value,
-                  button=row[button_key], once=once,
+                  button=row[button_key], once=True,
                   fg=COLOR_HEX.get(color, ACCENT), on_done=done,
                   end_sound=sound.thud if value == self.lo else None)
 
