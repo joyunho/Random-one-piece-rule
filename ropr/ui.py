@@ -675,22 +675,23 @@ class App(tk.Tk):
         nums.pack(fill="x", padx=24)
         self.num_entries = {}
         specs = (
-            ("dice_min", "다이스 최소", 0),
-            ("dice_max", "다이스 최대", 1),
+            ("altitude_min", "인생의고도 최소", 0),
+            ("altitude_max", "인생의고도 최대", 1),
             ("nyehyung_count", "녜힁제조기 글자 수", 2),
-            ("altitude_min", "인생의고도 최소", 3),
-            ("altitude_max", "인생의고도 최대", 4),
-            ("altitude_base", "인생의고도 기본더하기", 5),
-            ("altitude2_min", "한 번 더 최소", 6),
-            ("altitude2_max", "한 번 더 최대", 7),
-            ("tier_min", "너의상위는 최소", 8),
-            ("tier_max", "너의상위는 최대", 9),
-            ("unlucky_min", "행운의 토큰 최소", 18),
-            ("unlucky_max", "행운의 토큰 최대", 19),
-            ("must_legend", "필수 전설 개수", 10),
-            ("must_hidden", "필수 히든 개수", 11),
-            ("ban_legend", "금지 전설 개수", 12),
-            ("ban_hidden", "금지 히든 개수", 13),
+            # 졸업보상 꼴찌 1명이 한 번 더 뽑는 범위. 영상 미확인이라 기본은 비어 있다.
+            ("altitude2_min", "고도 추가 추첨 최소", 3),
+            ("altitude2_max", "고도 추가 추첨 최대", 4),
+            ("dice_min", "다이스 최소", 5),
+            ("tier_min", "너의상위는 최소", 6),
+            ("tier_max", "너의상위는 최대", 7),
+            ("dice_max", "다이스 최대", 8),
+            ("tier_zero_roll", "0상위가 되는 눈금", 9),
+            ("mission_count", "개인미션 개수", 10),
+            ("mission_penalty", "미션 실패 1개당 유카", 11),
+            ("must_legend", "필수 전설 개수", 12),
+            ("must_hidden", "필수 히든 개수", 13),
+            ("ban_legend", "금지 전설 개수", 14),
+            ("ban_hidden", "금지 히든 개수", 15),
         )
         for key, label, index in specs:
             row, col = divmod(index, 3)
@@ -699,15 +700,16 @@ class App(tk.Tk):
             tk.Label(cell, text=label, bg=PANEL, fg=INK,
                      font=(self.base, 10), width=18, anchor="w").pack(side="left")
             entry = ttk.Entry(cell, width=6, font=(self.base, 10))
-            entry.insert(0, str(self.cfg.get(key, "")))
+            value = self.cfg.get(key)
+            # 비워 둔 값(None)은 "None" 이 아니라 빈 칸으로 보여 준다
+            entry.insert(0, "" if value is None else str(value))
             entry.pack(side="left")
             self.num_entries[key] = entry
 
-        self.var_per_player = tk.BooleanVar(
-            value=bool(self.cfg.get("altitude_per_player", True)))
-        ttk.Checkbutton(inner, style="Card.TCheckbutton",
-                        text="인생의고도전을 빨/파/보/노 각각 뽑기 (끄면 다같이 쓰는 숫자 하나만)",
-                        variable=self.var_per_player).pack(anchor="w", padx=24, pady=(10, 0))
+        tk.Label(inner, text="고도 추가 추첨은 졸업보상을 가장 늦게 받은 1명만 합니다. "
+                             "범위를 비워 두면 그 버튼이 잠깁니다 (영상 미확인).",
+                 bg=PANEL, fg=MUTED, font=(self.base, 9)).pack(anchor="w", padx=24,
+                                                               pady=(8, 0))
 
         # ---- 방송 출력 창
         section("방송 출력 창  (OBS 로 캡처할 별도 창)")
@@ -784,9 +786,13 @@ class App(tk.Tk):
         self.cfg["contents"] = contents
 
         for key, entry in self.num_entries.items():
-            self.cfg[key] = parse_int(entry.get(), self.cfg.get(key, 0))
+            raw = entry.get().strip()
+            if not raw:
+                # 빈 칸은 0 이 아니라 "정하지 않음". 고도 추가 추첨이 여기 해당한다.
+                self.cfg[key] = None
+            else:
+                self.cfg[key] = parse_int(raw, self.cfg.get(key) or 0)
 
-        self.cfg["altitude_per_player"] = bool(self.var_per_player.get())
         self.cfg["nyehyung_strip_words"] = [
             w.strip() for w in self.strip_entry.get().split(",") if w.strip()]
 

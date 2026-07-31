@@ -354,8 +354,8 @@ class Roller:
             return None
         return (hi, lo) if lo > hi else (lo, hi)
 
-    def tier_range(self):
-        return self._range("tier_min", "tier_max", 0, 4)
+    # tier_range() 는 위 '너의상위는' 쪽에 있다. 여기에 또 정의하면
+    # 나중 정의가 이겨서 1~5 가 0~4 로 돌아가 버린다.
 
     def roll(self, span):
         lo, hi = span

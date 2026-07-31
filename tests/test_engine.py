@@ -7,8 +7,10 @@ import re
 import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
+from ropr import config as config_mod       # noqa: E402
 from ropr import data                      # noqa: E402
 from ropr.config import default_config     # noqa: E402
 from ropr.engine import Roller, weighted_pick  # noqa: E402
@@ -465,6 +467,91 @@ class TestAtomicPick(unittest.TestCase):
     def test_명단보다_많이_요청하면_있는만큼만(self):
         roller = make_roller(2, legend_chars=["A", "B"])
         self.assertEqual(sorted(roller.pick_chars("legend_chars", 7)), ["A", "B"])
+
+
+class TestConfigMigration(unittest.TestCase):
+    """예전 버전에서 저장한 설정.json 을 열어도 깨지지 않아야 한다."""
+
+    def test_없어진_룰이_남긴_설정은_지워진다(self):
+        old = {"unlucky_min": 0, "unlucky_max": 10,
+               "altitude_base": 10, "altitude_per_player": False,
+               "tier_min": 1}
+        cfg = config_mod._merge(old)
+        for key in config_mod.DEAD_KEYS:
+            self.assertNotIn(key, cfg, key)
+        self.assertEqual(cfg["tier_min"], 1)      # 살아있는 값은 그대로
+
+    def test_고도_추가추첨_범위는_비어있으면_None_그대로(self):
+        cfg = config_mod._merge({})
+        self.assertIsNone(cfg["altitude2_min"])
+        self.assertIsNone(cfg["altitude2_max"])
+        roller = Roller(cfg)
+        self.assertIsNone(roller.altitude_extra_range())
+
+    def test_범위를_채우면_추가추첨이_열린다(self):
+        cfg = config_mod._merge({"altitude2_min": 0, "altitude2_max": 5})
+        self.assertEqual(Roller(cfg).altitude_extra_range(), (0, 5))
+
+    def test_숫자를_비워도_기본값으로_돌아간다(self):
+        """설정 화면에서 칸을 비우면 None 이 저장된다. 그래도 죽으면 안 된다."""
+        cfg = config_mod._merge({"tier_min": None, "tier_max": None,
+                                 "altitude_min": None, "altitude_max": None,
+                                 "mission_count": None, "mission_penalty": None,
+                                 "tier_zero_roll": None})
+        roller = Roller(cfg)
+        self.assertEqual(roller.tier_range(), (1, 5))
+        self.assertEqual(roller.altitude_range(), (10, 20))
+        self.assertEqual(roller.tier_zero_roll(), 5)
+        self.assertEqual(roller.mission_count(), 3)
+        self.assertEqual(roller.mission_penalty(), 10)
+
+    def test_설정_화면에_있는_숫자칸은_전부_실제로_쓰이는_값이다(self):
+        """죽은 설정이 화면에 남아 있으면 안 된다."""
+        import ast
+        with open(os.path.join(ROOT, "ropr", "ui.py"), encoding="utf-8") as fp:
+            src = fp.read()
+        tree = ast.parse(src)
+        keys = set()
+        for node in ast.walk(tree):
+            # ("altitude_min", "인생의고도 최소", 0) 모양의 튜플만 모은다
+            if (isinstance(node, ast.Tuple) and len(node.elts) == 3
+                    and all(isinstance(e, ast.Constant) for e in node.elts)
+                    and isinstance(node.elts[0].value, str)
+                    and isinstance(node.elts[2].value, int)):
+                keys.add(node.elts[0].value)
+        self.assertIn("altitude_min", keys, "숫자 설정 목록을 못 찾았다")
+        base = default_config()
+        for key in keys:
+            self.assertIn(key, base, "설정 화면에 죽은 항목이 있다: " + key)
+
+
+class TestNoShadowedDefs(unittest.TestCase):
+    """같은 이름을 두 번 정의하면 나중 것이 이겨서 조용히 옛 동작으로 돌아간다.
+
+    실제로 tier_range() 가 두 번 정의돼 1~5 가 0~4 로 되돌아간 적이 있다.
+    """
+
+    def test_같은_이름을_두번_정의한_곳이_없다(self):
+        import ast
+        import collections
+        import glob
+
+        problems = []
+        for path in sorted(glob.glob(os.path.join(ROOT, "ropr", "*.py"))):
+            with open(path, encoding="utf-8") as fp:
+                tree = ast.parse(fp.read())
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.ClassDef, ast.Module)):
+                    continue
+                seen = collections.Counter(
+                    child.name for child in node.body
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)))
+                for name, count in seen.items():
+                    if count > 1:
+                        problems.append("%s: %s.%s x%d" % (
+                            os.path.basename(path),
+                            getattr(node, "name", "<module>"), name, count))
+        self.assertEqual(problems, [], "중복 정의: " + ", ".join(problems))
 
 
 class TestWeightedPick(unittest.TestCase):

@@ -133,12 +133,20 @@ def default_config():
     }
 
 
+# 없어진 룰이 남긴 설정. 예전에 저장한 설정.json 을 열 때 같이 지운다.
+DEAD_KEYS = (
+    "unlucky_min", "unlucky_max",       # '내가 제일 운 없어' 삭제
+    "altitude_base",                    # 인생의고도 기본더하기 -> 10~20 범위로 흡수
+    "altitude_per_player",              # 이제 항상 색깔별로 뽑는다
+)
+
+
 def _merge(loaded):
     """저장된 설정에 빠진 항목을 기본값으로 채운다 (버전 올라가도 안 깨지게)."""
     cfg = default_config()
 
     for key, value in loaded.items():
-        if key in ("contents", "gangwon"):
+        if key in ("contents", "gangwon") or key in DEAD_KEYS:
             continue
         cfg[key] = value
 
