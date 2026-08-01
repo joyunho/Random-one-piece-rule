@@ -73,6 +73,11 @@ class SpinPanel(tk.Frame):
             button.configure(state="disabled")
         frames = [f for f in frames if f is not None] or [final]
 
+        # 긴장감 트랙 한 덩어리를 여기서 한 번만 튼다. 틱과 마지막 화음까지
+        # 미리 섞여 있어서, 트랙이 깔리면 프레임마다 소리를 낼 필요가 없다.
+        # (winsound 는 새 소리를 틀면 앞의 소리를 끊어 버린다)
+        track = sound.spin_start("settle", sound.SPIN_PANEL)
+
         def step(delay, n):
             if delay > 235:
                 label.configure(text=str(final), fg=fg or ACCENT)
@@ -83,7 +88,10 @@ class SpinPanel(tk.Frame):
                     button.configure(state="normal")   # once=True 면 한 번만 눌린다
                 if cast:
                     self.app.cast_live(cast, str(final), False)
-                (end_sound or sound.settle)()
+                if end_sound is not None:
+                    end_sound()          # 꽝처럼 따로 정한 소리는 그대로
+                elif not track:
+                    sound.settle()       # 트랙이 안 깔렸을 때만
                 if on_done:
                     on_done()
                 self.app.refresh_panel_history()
@@ -94,7 +102,7 @@ class SpinPanel(tk.Frame):
                 self.app.cast_live(cast, text, True)
             if badge is not None:
                 badge.show(None, spinning=True)
-            if n % 2 == 0:
+            if not track and n % 2 == 0:
                 sound.tick()
             self._jobs.append(self.after(int(delay), lambda: step(delay * 1.14, n + 1)))
 

@@ -110,6 +110,8 @@ def default_config():
         "animate": True,
         # 효과음 (윈도우에서만 소리가 난다)
         "sound": True,
+        # 뽑는 동안 깔리는 긴장감 트랙 (끄면 예전처럼 '틱' 소리만)
+        "bgm": True,
         # 방송 출력 창 배경을 크로마키 초록으로
         "cast_chroma": False,
 

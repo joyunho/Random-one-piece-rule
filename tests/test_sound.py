@@ -81,9 +81,13 @@ class TestSoundOnWindows(unittest.TestCase):
     def test_윈도우면_소리를_낼_수_있다고_한다(self):
         self.assertTrue(self.sound.available())
 
+    # 밖에서 부르는 효과음 함수들
+    EFFECTS = ("tick", "settle", "taunt", "jackpot", "thud", "pop")
+
     def test_메모리_비동기_조합은_절대_쓰지_않는다(self):
         """이 조합은 무조건 RuntimeError 라서 소리가 안 난다."""
-        for name in self.sound._SOUNDS:
+        for name in self.EFFECTS:
+            self.sound.stop()            # 앞 소리가 끝났다고 치고
             self.played.clear()
             getattr(self.sound, name)()
             self.assertEqual(self.sound.last_error, "", name)
@@ -94,13 +98,69 @@ class TestSoundOnWindows(unittest.TestCase):
             self.assertTrue(flags & SND_ASYNC, name + " 는 비동기여야 화면이 안 멈춘다")
             self.assertTrue(flags & SND_NODEFAULT, name + " 에 SND_NODEFAULT 필요")
 
-    def test_모든_효과음이_실제_WAV_로_만들어진다(self):
+    def test_모든_소리가_실제_WAV_로_만들어진다(self):
         for name in self.sound._SOUNDS:
+            builder, seconds = self.sound._SOUNDS[name]
+            self.sound.stop()
             self.played.clear()
-            getattr(self.sound, name)()
+            self.sound._play(name, force=True)
             fname, _flags, frames = self.played[0]
             self.assertEqual(fname, name + ".wav")
             self.assertGreater(frames, 0, name + " 가 빈 소리다")
+            # 등록해 둔 길이와 실제 길이가 맞아야 겹침 방지가 제대로 된다
+            self.assertAlmostEqual(frames / 22050.0, seconds, delta=0.30, msg=name)
+
+    def test_스핀_트랙은_한_번만_깔린다(self):
+        """winsound 는 한 번에 한 소리라, 도는 중에 딴 걸 틀면 트랙이 끊긴다."""
+        self.sound.stop()
+        self.played.clear()
+        self.assertTrue(self.sound.spin_start("settle", self.sound.SPIN_PANEL))
+        self.assertEqual(len(self.played), 1)
+
+        # 트랙이 도는 동안 두 번째 스핀이 시작돼도 새로 틀지 않는다
+        self.assertTrue(self.sound.spin_start("settle", self.sound.SPIN_PANEL))
+        self.assertEqual(len(self.played), 1, self.played)
+        # 낱개 틱/끝소리도 트랙을 안 끊는다
+        self.sound.tick()
+        self.sound.settle()
+        self.sound.pop()
+        self.assertEqual(len(self.played), 1, self.played)
+
+        # 놀리는 소리는 하이라이트라서 끊고 들어간다
+        self.sound.taunt()
+        self.assertEqual(len(self.played), 2, self.played)
+        self.assertEqual(self.played[1][0], "taunt.wav")
+
+    def test_BGM_을_끄면_트랙_대신_틱만(self):
+        self.sound.set_bgm(False)
+        self.sound.stop()
+        self.played.clear()
+        self.assertFalse(self.sound.spin_start("settle", self.sound.SPIN_PANEL))
+        self.assertEqual(self.played, [])
+        self.sound.tick()
+        self.assertEqual(len(self.played), 1)
+        self.sound.set_bgm(True)
+
+    def test_스핀_트랙이_화면이_도는_시간을_덮는다(self):
+        """트랙이 화면보다 짧으면 중간에 소리가 끊겨 버린다."""
+        from ropr import synth
+        for timing in (self.sound.SPIN_PANEL, self.sound.SPIN_MAIN):
+            _ticks, span = synth.spin_schedule(*timing)
+            key = self.sound._spin_key("settle", timing)
+            self.sound.stop()
+            self.played.clear()
+            self.sound._play(key, force=True)
+            _fname, _flags, frames = self.played[0]
+            self.assertGreater(frames / 22050.0, span, key + " 트랙이 너무 짧다")
+
+    def test_틱이_화면_바뀌는_시각에_찍힌다(self):
+        from ropr import synth
+        times, span = synth.spin_schedule(*self.sound.SPIN_PANEL)
+        self.assertEqual(len(times), 14)
+        self.assertAlmostEqual(span, 1.428, delta=0.01)
+        self.assertAlmostEqual(times[0], 0.0)
+        for earlier, later in zip(times, times[1:]):
+            self.assertLess(earlier, later)
 
     def test_warm_up_이_전부_미리_만들어_둔다(self):
         self.sound.warm_up()
@@ -111,8 +171,11 @@ class TestSoundOnWindows(unittest.TestCase):
 
     def test_효과음을_끄면_아무것도_재생하지_않는다(self):
         self.sound.set_enabled(False)
+        self.sound.stop()
         self.played.clear()
         self.sound.settle()
+        self.sound.taunt()
+        self.assertFalse(self.sound.spin_start("settle", self.sound.SPIN_PANEL))
         self.assertEqual(self.played, [])
         self.sound.set_enabled(True)
 
@@ -142,8 +205,10 @@ class TestSoundElsewhere(unittest.TestCase):
         try:
             importlib.reload(sound)
             self.assertFalse(sound.available())
-            for name in sound._SOUNDS:       # 전부 불러도 예외가 없어야 한다
-                getattr(sound, name)()
+            for name in ("tick", "settle", "taunt", "jackpot", "thud", "pop"):
+                getattr(sound, name)()   # 전부 불러도 예외가 없어야 한다
+            sound.spin_start()
+            sound.stop()
             sound.warm_up()
             self.assertIn("윈도우가 아니라서", sound.self_test())
         finally:

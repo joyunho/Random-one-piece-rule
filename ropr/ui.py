@@ -74,6 +74,7 @@ class App(tk.Tk):
         self.history = []
         self._spin_job = None
         self._spinning = False
+        self._spin_track = False
         self.last_result = None
         self._history_index = None
         self.panel = None
@@ -82,7 +83,7 @@ class App(tk.Tk):
         self.cast = None            # 방송 출력 창 (필요할 때 만든다)
 
         sound.set_enabled(bool(self.cfg.get("sound", True)))
-        sound.warm_up()
+        sound.set_bgm(bool(self.cfg.get("bgm", True)))
 
         self.base = pick_font(self)
         self.title("%s  v%s" % (data.APP_TITLE, data.VERSION))
@@ -98,6 +99,13 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.bind("<Return>", self._shortcut_spin)
         self.bind("<space>", self._shortcut_spin)
+
+        # 효과음 WAV 만들기는 창이 뜬 다음에 한 개씩. 한꺼번에 만들면 켤 때 멈춘다.
+        self.after(120, self._warm_sounds)
+
+    def _warm_sounds(self):
+        if sound.warm_next():
+            self.after(20, self._warm_sounds)
 
     def _shortcut_spin(self, event=None):
         """Enter/Space 단축키. 글자를 입력하는 칸에 있을 때는 무시한다."""
@@ -275,8 +283,13 @@ class App(tk.Tk):
         sound_chk = ttk.Checkbutton(opts, text="효과음", style="Card.TCheckbutton",
                                     variable=self.var_sound, command=self._sync_toggles)
         sound_chk.pack(anchor="w")
+        self.var_bgm = tk.BooleanVar(value=bool(self.cfg.get("bgm", True)))
+        bgm_chk = ttk.Checkbutton(opts, text="긴장감 BGM", style="Card.TCheckbutton",
+                                  variable=self.var_bgm, command=self._sync_toggles)
+        bgm_chk.pack(anchor="w")
         if not sound.available():
-            sound_chk.configure(state="disabled")   # 윈도우가 아니면 소리 없음
+            for chk in (sound_chk, bgm_chk):
+                chk.configure(state="disabled")     # 윈도우가 아니면 소리 없음
 
         bottom = tk.Frame(tab, bg=PANEL)
         bottom.pack(side="bottom", fill="x", padx=20, pady=(6, 16))
@@ -332,6 +345,8 @@ class App(tk.Tk):
         self.cfg["avoid_repeat"] = bool(self.var_repeat.get())
         self.cfg["sound"] = bool(self.var_sound.get())
         sound.set_enabled(self.cfg["sound"])
+        self.cfg["bgm"] = bool(self.var_bgm.get())
+        sound.set_bgm(self.cfg["bgm"])
 
     def _spin(self):
         if self._spinning:
@@ -357,17 +372,21 @@ class App(tk.Tk):
         self._spinning = True
         self.spin_btn.configure(state="disabled")
         self.main_result.show(None)
+        # 룰렛 도는 내내 깔릴 긴장감 트랙 (틱·끝 화음까지 미리 섞여 있다)
+        self._spin_track = sound.spin_start("settle", sound.SPIN_MAIN)
         self._spin_step(names, finish, 45.0, 0)
 
     def _spin_step(self, names, finish, delay, count):
         if delay > 270:
             self._spinning = False
             self.spin_btn.configure(state="normal")
+            if not self._spin_track:
+                sound.settle()
             finish()
             return
         self.main_display.configure(text=random.choice(names), fg="#9aa1ae",
                                     font=(self.base, 22, "bold"))
-        if count % 2 == 0:
+        if not self._spin_track and count % 2 == 0:
             sound.tick()
         self._spin_job = self.after(
             int(delay), lambda: self._spin_step(names, finish, delay * 1.16, count + 1))

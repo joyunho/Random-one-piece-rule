@@ -1,41 +1,79 @@
 # -*- coding: utf-8 -*-
-"""효과음.
+"""효과음 재생.
 
-외부 파일 없이 그때그때 WAV 를 만들어서 재생한다.
+소리를 만드는 건 synth.py 가 하고, 여기서는 '언제 무엇을 트는지' 만 다룬다.
 윈도우에서만 소리가 나고(winsound), 다른 OS 에서는 조용히 아무것도 안 한다.
 
-주의 — winsound 는 '메모리에서 비동기 재생' 을 지원하지 않는다.
+주의 1 — winsound 는 '메모리에서 비동기 재생' 을 지원하지 않는다.
 
     winsound.PlaySound(data, SND_MEMORY | SND_ASYNC)
         -> RuntimeError("Cannot play asynchronously from memory")
 
-CPython 이 Win32 를 부르기도 전에 막아 버리는 검사라, 예전 버전에서도 통한 적이 없다.
+CPython 이 Win32 를 부르기도 전에 막아 버리는 검사다.
 (PC/winsound.c : "Sidestep reference counting headache")
+그래서 만든 WAV 를 임시 폴더에 파일로 써 두고 SND_FILENAME | SND_ASYNC 로 튼다.
 
-그래서 만든 WAV 를 임시 폴더에 파일로 한 번 써 두고,
-SND_FILENAME | SND_ASYNC 로 재생한다. 이러면 화면이 멈추지 않는다.
+주의 2 — winsound 는 한 번에 한 소리만 낸다.
+새로 재생하면 앞의 소리가 그 자리에서 끊긴다. 그래서 'BGM 을 깔고 그 위에 효과음'
+같은 건 재생 두 번으로는 안 된다. 대신 synth.py 에서 미리 섞은
+'긴장감 트랙 + 릴 틱 + 마지막 화음' 한 덩어리를 스핀 시작할 때 한 번만 튼다.
 """
 
 import atexit
-import io
-import math
 import os
 import shutil
-import struct
 import tempfile
-import wave
+import time
+
+from . import synth
 
 try:
     import winsound
 except ImportError:            # 윈도우가 아니면 소리 없이 동작
     winsound = None
 
-RATE = 22050
 _cache = {}
 _files = {}
 _tmpdir = None
 _enabled = True
+_bgm = True                    # 스핀 중 긴장감 트랙
+_busy_until = 0.0              # 지금 틀어 둔 트랙이 끝나는 시각
 last_error = ""                # 소리가 안 날 때 [설정] 탭에서 이유를 보여준다
+
+
+# 이름 -> (만드는 함수, 길이초). 길이는 트랙이 겹치지 않게 하려고 들고 있다.
+_SOUNDS = {
+    "tick": (synth.tick_wav, 0.05),
+    "settle": (synth.settle_wav, 1.00),
+    "taunt": (synth.taunt_wav, 1.35),
+    "jackpot": (synth.jackpot_wav, 1.45),
+    "thud": (synth.thud_wav, 0.75),
+    "pop": (synth.pop_wav, 0.22),
+}
+
+# 스핀 트랙 : 패널(38ms/1.14/235)과 메인 룰렛(45ms/1.16/270) 은 길이가 다르다
+SPIN_PANEL = (38, 1.14, 235)
+SPIN_MAIN = (45, 1.16, 270)
+
+
+def _spin_key(kind, timing):
+    return "spin_%s_%d" % (kind, int(timing[0]))
+
+
+def _register_spins():
+    """스핀 트랙을 등록한다.
+
+    끝소리 종류마다 트랙을 따로 만들 수도 있지만, 실제로 쓰는 건 'settle' 뿐이다.
+    (놀리는 소리·꽝은 스핀이 끝난 뒤에 따로 나온다)
+    안 쓰는 걸 미리 만들면 프로그램 켤 때 1초 넘게 멈춰 있어서 만들지 않는다.
+    """
+    for timing in (SPIN_PANEL, SPIN_MAIN):
+        _ticks, span = synth.spin_schedule(*timing)
+        _SOUNDS[_spin_key("settle", timing)] = (
+            (lambda t=timing: synth.spin_wav("settle", *t)), span + 1.15)
+
+
+_register_spins()
 
 
 def available():
@@ -47,31 +85,13 @@ def set_enabled(flag):
     _enabled = bool(flag)
 
 
-def _wav(notes, volume=0.30):
-    """(주파수, 길이초) 목록을 이어붙인 WAV 바이트를 만든다.
+def set_bgm(flag):
+    global _bgm
+    _bgm = bool(flag)
 
-    주파수 0 은 쉼표. 앞뒤에 짧은 페이드를 넣어 '틱' 하는 잡음을 없앤다.
-    """
-    frames = bytearray()
-    for freq, dur in notes:
-        count = max(1, int(RATE * dur))
-        attack = max(1, int(RATE * 0.004))
-        release = max(1, int(RATE * 0.020))
-        for i in range(count):
-            if freq <= 0:
-                frames += struct.pack("<h", 0)
-                continue
-            env = min(1.0, i / attack) * min(1.0, (count - i) / release)
-            value = volume * env * math.sin(2.0 * math.pi * freq * i / RATE)
-            frames += struct.pack("<h", int(max(-1.0, min(1.0, value)) * 32767))
 
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as out:
-        out.setnchannels(1)
-        out.setsampwidth(2)
-        out.setframerate(RATE)
-        out.writeframes(bytes(frames))
-    return buf.getvalue()
+def bgm_enabled():
+    return _bgm
 
 
 # ------------------------------------------------------------------ 임시 파일
@@ -107,10 +127,15 @@ def _path_for(key, data):
     return path
 
 
-def _play(key, builder):
-    global last_error
+def _play(key, force=False):
+    """소리 하나 재생. force 가 아니면 트랙이 도는 중엔 건드리지 않는다."""
+    global last_error, _busy_until
     if winsound is None or not _enabled:
-        return
+        return False
+    builder, seconds = _SOUNDS[key]
+    # 긴장감 트랙이 도는 중에 딴 걸 틀면 트랙이 끊긴다. 그냥 넘어간다.
+    if not force and time.monotonic() < _busy_until:
+        return False
     try:
         data = _cache.get(key)
         if data is None:
@@ -119,71 +144,95 @@ def _play(key, builder):
         winsound.PlaySound(
             _path_for(key, data),
             winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        _busy_until = time.monotonic() + seconds
         last_error = ""
+        return True
     except Exception as exc:        # 소리 때문에 프로그램이 죽으면 안 된다
         last_error = "%s: %s" % (type(exc).__name__, exc)
+        return False
 
 
 # ------------------------------------------------------------------ 효과음들
-_SOUNDS = {
-    # 룰렛이 돌아가는 동안의 짧은 '틱'
-    "tick": lambda: _wav([(1500, 0.018)], volume=0.16),
-    # 멈출 때 올라가는 '띠리리링'
-    "settle": lambda: _wav(
-        [(784, 0.055), (988, 0.055), (1175, 0.055), (1568, 0.130)], volume=0.30),
-    # 놀리는 느낌으로 축 처지는 소리 (0상위가 떴을 때)
-    "taunt": lambda: _wav(
-        [(622, 0.130), (0, 0.030), (587, 0.130), (0, 0.030),
-         (494, 0.150), (0, 0.040), (392, 0.300)], volume=0.30),
-    # 좋은 게 떴을 때 한 번 더 올라가는 소리
-    "jackpot": lambda: _wav(
-        [(784, 0.060), (1047, 0.060), (1319, 0.060),
-         (1568, 0.060), (2093, 0.200)], volume=0.32),
-    # 꽝 / 아무것도 없을 때
-    "thud": lambda: _wav([(196, 0.090), (147, 0.220)], volume=0.28),
-    # 방송 화면에서 값이 하나 확정될 때 짧게 튀는 소리
-    "pop": lambda: _wav([(1319, 0.035), (1976, 0.075)], volume=0.26),
-}
-
-
 def tick():
-    _play("tick", _SOUNDS["tick"])
+    """긴장감 트랙을 끈 경우에만 쓰는 낱개 '틱'."""
+    _play("tick")
 
 
 def settle():
-    _play("settle", _SOUNDS["settle"])
+    _play("settle")
 
 
 def taunt():
-    _play("taunt", _SOUNDS["taunt"])
+    # 놀리는 소리는 스핀 트랙을 끊어서라도 들려줘야 한다 (그게 하이라이트)
+    _play("taunt", force=True)
 
 
 def jackpot():
-    _play("jackpot", _SOUNDS["jackpot"])
+    _play("jackpot", force=True)
 
 
 def thud():
-    _play("thud", _SOUNDS["thud"])
+    _play("thud", force=True)
 
 
 def pop():
-    _play("pop", _SOUNDS["pop"])
+    _play("pop")
+
+
+def spin_start(kind="settle", timing=SPIN_PANEL):
+    """스핀이 시작될 때 긴장감 트랙을 한 번 튼다.
+
+    돌려주는 값이 True 면 마지막 화음까지 트랙에 들어 있으니,
+    부르는 쪽에서 틱이나 끝소리를 따로 낼 필요가 없다.
+    """
+    if winsound is None or not _enabled or not _bgm:
+        return False
+    if time.monotonic() < _busy_until:     # 이미 돌고 있으면 그게 계속 깔린다
+        return True
+    return _play(_spin_key(kind, timing), force=True)
+
+
+def stop():
+    """지금 나는 소리를 멈춘다."""
+    global _busy_until
+    _busy_until = 0.0
+    if winsound is None:
+        return
+    try:
+        winsound.PlaySound(None, winsound.SND_PURGE)
+    except Exception:
+        pass
+
+
+def warm_next():
+    """미리 만들어 둘 소리를 하나만 만든다. 남은 게 있으면 True.
+
+    전부 한 번에 만들면 0.5초쯤 멈춰 있어서, 창을 띄운 뒤 한 개씩 나눠 만든다.
+    긴 트랙(스핀)을 먼저 만들어야 첫 뽑기에서 안 버벅인다.
+    """
+    global last_error
+    if winsound is None:
+        return False
+    todo = [k for k in _SOUNDS if k not in _files]
+    if not todo:
+        return False
+    todo.sort(key=lambda k: -_SOUNDS[k][1])      # 긴 것부터
+    key = todo[0]
+    try:
+        data = _cache.get(key)
+        if data is None:
+            data = _cache[key] = _SOUNDS[key][0]()
+        _path_for(key, data)
+    except Exception as exc:
+        last_error = "%s: %s" % (type(exc).__name__, exc)
+        _files[key] = ""                          # 계속 다시 시도하지 않게
+    return len(todo) > 1
 
 
 def warm_up():
-    """첫 재생이 끊기지 않도록 WAV 를 미리 만들어서 파일로 깔아 둔다."""
-    if winsound is None:
-        return
-    for key, builder in _SOUNDS.items():
-        try:
-            data = _cache.get(key)
-            if data is None:
-                data = _cache[key] = builder()
-            _path_for(key, data)
-        except Exception as exc:
-            global last_error
-            last_error = "%s: %s" % (type(exc).__name__, exc)
-            return
+    """미리 만들기를 끝까지 (테스트·스크립트용)."""
+    while warm_next():
+        pass
 
 
 def self_test():
@@ -192,8 +241,14 @@ def self_test():
         return "이 컴퓨터는 윈도우가 아니라서 소리를 낼 수 없어요."
     if not _enabled:
         return "효과음이 꺼져 있어요. [메인 뽑기] 화면의 [효과음] 을 켜 주세요."
-    settle()
+    stop()
+    if _bgm:
+        _play(_spin_key("settle", SPIN_PANEL), force=True)
+        what = "긴장감 트랙 + 마지막 화음"
+    else:
+        _play("settle", force=True)
+        what = "마지막 화음"
     if last_error:
         return "소리를 내지 못했어요 — " + last_error
-    return "소리를 재생했어요. 안 들리면 윈도우 볼륨 믹서에서 이 프로그램이 " \
-           "음소거되어 있는지 확인해 주세요."
+    return "%s 를 재생했어요. 안 들리면 윈도우 볼륨 믹서에서 이 프로그램이 " \
+           "음소거되어 있는지 확인해 주세요." % what
